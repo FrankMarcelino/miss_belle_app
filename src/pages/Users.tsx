@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Loader2, Search } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Power } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -16,6 +16,7 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<Profile | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -34,6 +35,21 @@ export default function Users() {
       console.error('Error loading users:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleToggleStatus(userId: string, currentStatus: boolean) {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ is_active: !currentStatus })
+        .eq('id', userId);
+
+      if (error) throw error;
+      loadUsers();
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      alert('Erro ao alterar status do usuário');
     }
   }
 
@@ -130,10 +146,22 @@ export default function Users() {
                     <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
                     <td className="px-6 py-4">{getStatusBadge(user.is_active)}</td>
                     <td className="px-6 py-4 text-right">
-                      <button className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-text hover:bg-background rounded-lg transition-colors">
-                        <Edit2 className="w-4 h-4" />
-                        Editar
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setEditingUser(user)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-text hover:bg-background rounded-lg transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleToggleStatus(user.id, user.is_active)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-text hover:bg-background rounded-lg transition-colors"
+                          title={user.is_active ? 'Desativar' : 'Ativar'}
+                        >
+                          <Power className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -152,6 +180,17 @@ export default function Users() {
           }}
         />
       )}
+
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
+          onSuccess={() => {
+            setEditingUser(null);
+            loadUsers();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -159,6 +198,146 @@ export default function Users() {
 interface CreateUserModalProps {
   onClose: () => void;
   onSuccess: () => void;
+}
+
+interface EditUserModalProps {
+  user: Profile;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
+  const [fullName, setFullName] = useState(user.full_name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState<'super_admin' | 'user'>(user.role);
+  const [isActive, setIsActive] = useState(user.is_active);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName,
+          email,
+          role,
+          is_active: isActive,
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      const { error: authError } = await supabase.auth.admin.updateUserById(
+        user.id,
+        { email }
+      );
+
+      if (authError) {
+        console.warn('Could not update auth email:', authError);
+      }
+
+      onSuccess();
+    } catch (error: any) {
+      setError(error.message || 'Erro ao atualizar usuário');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+        <h2 className="text-xl font-semibold text-text mb-6">Editar Usuário</h2>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Nome Completo
+            </label>
+            <input
+              type="text"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              E-mail
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Perfil
+            </label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'super_admin' | 'user')}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              disabled={loading}
+            >
+              <option value="user">Profissional</option>
+              <option value="super_admin">Super Admin</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                disabled={loading}
+              />
+              <span className="text-sm font-medium text-text">Usuário ativo</span>
+            </label>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              disabled={loading}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50"
+              disabled={loading}
+            >
+              {loading ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
