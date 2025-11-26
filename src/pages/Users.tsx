@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Loader2, Search, Power } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Power, Trash2 } from 'lucide-react';
 
 interface Profile {
   id: string;
@@ -17,6 +17,7 @@ export default function Users() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
+  const [deletingUser, setDeletingUser] = useState<Profile | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -50,6 +51,29 @@ export default function Users() {
     } catch (error) {
       console.error('Error toggling user status:', error);
       alert('Erro ao alterar status do usuário');
+    }
+  }
+
+  async function handleDeleteUser(userId: string) {
+    try {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', userId);
+
+      if (profileError) throw profileError;
+
+      const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+
+      if (authError) {
+        console.warn('Could not delete auth user:', authError);
+      }
+
+      setDeletingUser(null);
+      loadUsers();
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Erro ao deletar usuário');
     }
   }
 
@@ -161,6 +185,13 @@ export default function Users() {
                         >
                           <Power className="w-4 h-4" />
                         </button>
+                        <button
+                          onClick={() => setDeletingUser(user)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Deletar"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -189,6 +220,14 @@ export default function Users() {
             setEditingUser(null);
             loadUsers();
           }}
+        />
+      )}
+
+      {deletingUser && (
+        <DeleteConfirmModal
+          user={deletingUser}
+          onClose={() => setDeletingUser(null)}
+          onConfirm={() => handleDeleteUser(deletingUser.id)}
         />
       )}
     </div>
@@ -335,6 +374,42 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteConfirmModalProps {
+  user: Profile;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProps) {
+  return (
+    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+        <h2 className="text-xl font-semibold text-text mb-4">Confirmar Exclusão</h2>
+
+        <p className="text-text-muted mb-6">
+          Tem certeza que deseja deletar o usuário <strong className="text-text">{user.full_name}</strong>?
+          Esta ação não pode ser desfeita.
+        </p>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Deletar
+          </button>
+        </div>
       </div>
     </div>
   );
