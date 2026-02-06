@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BottomSheet from '../components/mobile/BottomSheet';
 import PatientAutocomplete from '../components/mobile/PatientAutocomplete';
+import { useToast } from '../components/Toast';
+import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
 import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Clock, Search } from 'lucide-react';
 
 interface Appointment {
@@ -34,6 +36,7 @@ type ViewMode = 'day' | 'week';
 
 export default function Agenda() {
   const { user, isSuperAdmin } = useAuth();
+  const { showToast, ToastComponent } = useToast();
   const [viewMode, setViewMode] = useState<ViewMode>('day');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -388,8 +391,11 @@ export default function Agenda() {
             setShowCreateModal(false);
             loadAppointments();
           }}
+          showToast={showToast}
         />
       </BottomSheet>
+
+      {ToastComponent}
     </div>
   );
 }
@@ -576,7 +582,7 @@ function AppointmentDetailsContent({
 
     setUpdating(true);
     try {
-      const updateData: any = { status: newStatus };
+      const updateData: { status: string; cancellation_reason?: string } = { status: newStatus };
       if (newStatus === 'cancelled' && cancellationReason) {
         updateData.cancellation_reason = cancellationReason;
       }
@@ -719,6 +725,7 @@ interface CreateAppointmentFormProps {
   defaultProfessionalId: string;
   onClose: () => void;
   onSuccess: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
 function CreateAppointmentForm({
@@ -726,6 +733,7 @@ function CreateAppointmentForm({
   defaultProfessionalId,
   onClose,
   onSuccess,
+  showToast,
 }: CreateAppointmentFormProps) {
   const { user, isSuperAdmin } = useAuth();
   const [patientId, setPatientId] = useState('');
@@ -804,8 +812,27 @@ function CreateAppointmentForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
+    // Client-side validation
+    const validation = validateAppointmentData({
+      patientId,
+      procedureId,
+      professionalId,
+      appointmentDate,
+      appointmentTime,
+    });
+
+    if (!validation.isValid) {
+      // Show first validation error
+      const firstError = validation.errors[0];
+      showToast(firstError.type, firstError.title, firstError.description);
+      setError(firstError.title);
+      return;
+    }
+
+    // Check for conflicts
     if (conflict) {
-      setError('Já existe um agendamento para este horário. Escolha outro horário.');
+      showToast('error', 'Conflito de horário', 'Já existe um agendamento para este profissional neste horário.');
+      setError('Conflito de horário');
       return;
     }
 
@@ -825,9 +852,14 @@ function CreateAppointmentForm({
 
       if (insertError) throw insertError;
 
+      // Success toast
+      showToast('success', 'Agendamento criado!', 'O agendamento foi salvo com sucesso.');
       onSuccess();
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao criar agendamento');
+      // Parse and display user-friendly error
+      const appError = parseSupabaseError(error);
+      showToast(appError.type, appError.title, appError.description);
+      setError(appError.title);
     } finally {
       setLoading(false);
     }
