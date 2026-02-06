@@ -56,15 +56,16 @@ BEGIN
   END IF;
 END $$;
 
--- Limpar dados de teste (appointments primeiro, depois procedures)
+-- Limpar dados de teste (transactions → appointments → procedures)
 DO $$
 DECLARE
+  deleted_transactions integer;
   deleted_appointments integer;
   deleted_procedures integer;
+  test_procedure_ids uuid[];
 BEGIN
-  -- Deletar appointments que referenciam procedimentos de teste
-  DELETE FROM appointments 
-  WHERE procedure_id IN (
+  -- IDs dos procedimentos de teste
+  test_procedure_ids := ARRAY[
     'a1111111-1111-1111-1111-111111111111',
     'a2222222-2222-2222-2222-222222222222',
     'a3333333-3333-3333-3333-333333333333',
@@ -73,24 +74,30 @@ BEGIN
     'a6666666-6666-6666-6666-666666666666',
     'a7777777-7777-7777-7777-777777777777',
     'a8888888-8888-8888-8888-888888888888'
+  ]::uuid[];
+  
+  -- 1. Deletar transações de caixa que referenciam appointments de procedimentos de teste
+  DELETE FROM cash_register_transactions 
+  WHERE appointment_id IN (
+    SELECT id FROM appointments WHERE procedure_id = ANY(test_procedure_ids)
   );
+  GET DIAGNOSTICS deleted_transactions = ROW_COUNT;
+  
+  IF deleted_transactions > 0 THEN
+    RAISE NOTICE '✅ % transações de teste removidas', deleted_transactions;
+  END IF;
+  
+  -- 2. Deletar appointments que referenciam procedimentos de teste
+  DELETE FROM appointments 
+  WHERE procedure_id = ANY(test_procedure_ids);
   GET DIAGNOSTICS deleted_appointments = ROW_COUNT;
   
   IF deleted_appointments > 0 THEN
     RAISE NOTICE '✅ % agendamentos de teste removidos', deleted_appointments;
   END IF;
   
-  -- Agora deletar procedimentos de teste
-  DELETE FROM procedures WHERE id IN (
-    'a1111111-1111-1111-1111-111111111111',
-    'a2222222-2222-2222-2222-222222222222',
-    'a3333333-3333-3333-3333-333333333333',
-    'a4444444-4444-4444-4444-444444444444',
-    'a5555555-5555-5555-5555-555555555555',
-    'a6666666-6666-6666-6666-666666666666',
-    'a7777777-7777-7777-7777-777777777777',
-    'a8888888-8888-8888-8888-888888888888'
-  );
+  -- 3. Agora deletar procedimentos de teste
+  DELETE FROM procedures WHERE id = ANY(test_procedure_ids);
   GET DIAGNOSTICS deleted_procedures = ROW_COUNT;
   
   IF deleted_procedures > 0 THEN

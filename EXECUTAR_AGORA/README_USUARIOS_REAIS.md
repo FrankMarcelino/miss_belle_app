@@ -134,6 +134,26 @@ Thais                     | 10
 ### Erro: "no unique constraint matching ON CONFLICT"
 **Solução**: Use os scripts `_SAFE.sql` que adicionam a constraint automaticamente.
 
+### Erro: "violates foreign key constraint"
+**Causa**: Tentando deletar dados na ordem errada.
+
+**Ordem CORRETA de deleção** (respeita foreign keys):
+```
+1. cash_register_transactions  (referencia appointments)
+   ↓
+2. cash_register_closings       (referencia profiles)
+   ↓
+3. appointments                 (referencia procedures, patients, profiles)
+   ↓
+4. patients                     (referencia profiles)
+   ↓
+5. professional_procedures      (referencia profiles, procedures)
+   ↓
+6. procedures                   (não tem dependências)
+```
+
+**Solução**: Use o script `00_limpar_dados_teste.sql` que deleta na ordem correta.
+
 ### Erro: "Usuário não encontrado"
 **Solução**: Crie os usuários no Supabase Auth primeiro (Dashboard → Authentication → Users).
 
