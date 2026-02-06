@@ -1,0 +1,86 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║   📋 EXECUTE ESTES ARQUIVOS NO SUPABASE SQL EDITOR                   ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+
+🎯 ORDEM DE EXECUÇÃO (IMPORTANTE!)
+═══════════════════════════════════════════════════════════════════════
+
+Execute UM POR VEZ, nesta ordem:
+
+
+1️⃣ PRIMEIRO
+   📁 20260206131236_improve_cash_register_integrity_SAFE.sql
+   ✅ Copia TODO o conteúdo
+   ✅ Cola no Supabase SQL Editor
+   ✅ Clica RUN ▶️
+   ✅ Aguarda: "✅ Migration executada com sucesso!"
+
+
+2️⃣ SEGUNDO
+   📁 20260206131306_add_appointment_conflict_check_SAFE.sql
+   ✅ Copia TODO o conteúdo
+   ✅ Cola no Supabase SQL Editor
+   ✅ Clica RUN ▶️
+   ✅ Aguarda: "✅ Migration executada com sucesso!"
+
+
+3️⃣ TERCEIRO
+   📁 20260206140000_fix_patients_rls_for_joins_SAFE.sql
+   ✅ Copia TODO o conteúdo
+   ✅ Cola no Supabase SQL Editor
+   ✅ Clica RUN ▶️
+   ✅ Aguarda: "✅ Migration executada com sucesso!"
+
+
+4️⃣ QUARTO
+   📁 20260206150000_add_professional_procedures_SAFE.sql
+   ✅ Copia TODO o conteúdo
+   ✅ Cola no Supabase SQL Editor
+   ✅ Clica RUN ▶️
+   ✅ Aguarda: "✅ Migration executada com sucesso!"
+
+
+5️⃣ POR ÚLTIMO (SEED)
+   📁 seed.sql
+   ✅ Copia TODO o conteúdo
+   ✅ Cola no Supabase SQL Editor
+   ✅ Clica RUN ▶️
+   ✅ Aguarda: "NOTICE: Seed concluído com sucesso!"
+
+
+═══════════════════════════════════════════════════════════════════════
+ ⚠️  DICA IMPORTANTE
+═══════════════════════════════════════════════════════════════════════
+
+Se o SEED criar dados duplicados, ANTES de executá-lo, rode isto:
+
+```sql
+TRUNCATE TABLE cash_register_transactions CASCADE;
+TRUNCATE TABLE cash_register_closings CASCADE;
+TRUNCATE TABLE appointments CASCADE;
+TRUNCATE TABLE patients CASCADE;
+TRUNCATE TABLE procedures CASCADE;
+TRUNCATE TABLE professional_procedures CASCADE;
+```
+
+
+═══════════════════════════════════════════════════════════════════════
+ 🌐 COMO ACESSAR O SUPABASE SQL EDITOR
+═══════════════════════════════════════════════════════════════════════
+
+1. Vá para: https://supabase.com/dashboard
+2. Selecione seu projeto
+3. No menu lateral, clique em: SQL Editor
+4. Clique em: New Query
+5. Cole o conteúdo do arquivo
+6. Clique em: RUN ▶️
+
+
+═══════════════════════════════════════════════════════════════════════
+ ✅ PRONTO!
+═══════════════════════════════════════════════════════════════════════
+
+Depois de executar tudo, recarregue sua aplicação e teste! 🎉
