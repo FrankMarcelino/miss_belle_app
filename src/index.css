@@ -47,13 +47,13 @@
     @apply gap-3;
   }
 
-  /* Safe area for notches (iOS) */
+  /* Safe area for notches (iOS) - using env() for dynamic safe areas */
   .safe-top {
-    @apply pt-safe;
+    padding-top: env(safe-area-inset-top);
   }
 
   .safe-bottom {
-    @apply pb-safe;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   /* Fixed bottom navigation area */

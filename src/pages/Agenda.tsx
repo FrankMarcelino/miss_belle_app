@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BottomSheet from '../components/mobile/BottomSheet';
 import PatientAutocomplete from '../components/mobile/PatientAutocomplete';
-import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, X, Clock, Search } from 'lucide-react';
+import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Clock, Search } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -17,11 +17,6 @@ interface Appointment {
   patient?: { full_name: string };
   procedure?: { name: string; duration_minutes: number };
   professional?: { full_name: string };
-}
-
-interface Patient {
-  id: string;
-  full_name: string;
 }
 
 interface Procedure {
@@ -831,8 +826,8 @@ function CreateAppointmentForm({
       if (insertError) throw insertError;
 
       onSuccess();
-    } catch (error: any) {
-      setError(error.message || 'Erro ao criar agendamento');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao criar agendamento');
     } finally {
       setLoading(false);
     }

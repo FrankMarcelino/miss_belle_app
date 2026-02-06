@@ -158,7 +158,7 @@ export default function Dashboard() {
       const { data, error } = await query;
       if (error) throw error;
 
-      setUpcomingAppointments(data || []);
+      setUpcomingAppointments((data as unknown as UpcomingAppointment[]) || []);
     } catch (error) {
       console.error('Error loading upcoming appointments:', error);
     }

@@ -154,9 +154,9 @@ export default function PatientAutocomplete({
         setShowCreateForm(false);
         onChange(data.id);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating patient:', error);
-      alert(error.message || 'Erro ao criar paciente');
+      alert(error instanceof Error ? error.message : 'Erro ao criar paciente');
     } finally {
       setCreating(false);
     }
