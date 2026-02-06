@@ -136,6 +136,39 @@ Thais                     | 10
 
 ---
 
+## 🔐 PROBLEMA: Login não funciona após criar usuários?
+
+Se você executou o script e os usuários foram criados, mas o login dá erro "credenciais inválidas", é porque o hash da senha pode não estar no formato correto.
+
+### ✅ SOLUÇÃO RÁPIDA:
+
+Execute este script para resetar as senhas:
+
+```sql
+📁 04_resetar_senhas_usuarios.sql
+```
+
+Este script:
+- Gera o hash correto da senha "Amin123"
+- Atualiza os 3 usuários no auth.users
+- Valida o status dos usuários
+
+### 🔧 ALTERNATIVA: Resetar no Dashboard (100% confiável)
+
+1. Vá em: **Dashboard** → **Authentication** → **Users**
+2. Para cada usuário, clique nos **3 pontinhos** (⋯)
+3. Clique em **"Send Password Reset"** ou digite nova senha
+4. Defina senha: `Amin123`
+
+Faça para os 3 usuários:
+- anapaulaalmeida@missabelle.com
+- sefora@missabelle.com
+- thais@missabelle.com
+
+📖 **Mais detalhes**: Veja `RESETAR_SENHAS.md`
+
+---
+
 ## ⚠️ Troubleshooting
 
 ### Erro: "no unique constraint matching ON CONFLICT"

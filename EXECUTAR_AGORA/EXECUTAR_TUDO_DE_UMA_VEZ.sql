@@ -51,8 +51,9 @@ BEGIN
   -- Gerar novo ID
   new_user_id := gen_random_uuid();
   
-  -- Hash da senha usando crypt (disponível via pgcrypto)
-  encrypted_pw := crypt(user_password, gen_salt('bf'));
+  -- Hash da senha usando crypt (pgcrypto extension)
+  -- Formato compatível com Supabase Auth (bcrypt)
+  encrypted_pw := crypt(user_password, gen_salt('bf', 10));
   
   -- Inserir em auth.users
   INSERT INTO auth.users (
