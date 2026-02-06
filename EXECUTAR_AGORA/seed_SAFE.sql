@@ -213,19 +213,22 @@ BEGIN
   WHERE is_active = true
   ON CONFLICT (professional_id, procedure_id) DO NOTHING;
   
-  -- Se houver outros usuários, distribuir procedimentos
+  -- Se houver outros usuários, distribuir procedimentos por especialização
+  -- Nota: Se houver apenas 1 usuário, estas queries não farão nada (isso é OK)
+  
   -- Usuário 2: Especialista em Facial (Limpeza, Hidratação, Peeling, Acne)
   INSERT INTO professional_procedures (professional_id, procedure_id)
   SELECT 
     p.id,
     pr.id
-  FROM profiles p
+  FROM (
+    SELECT id FROM profiles 
+    WHERE id != first_user_id AND is_active = true AND role = 'user'
+    ORDER BY created_at
+    LIMIT 1
+  ) p
   CROSS JOIN procedures pr
-  WHERE p.id != first_user_id 
-    AND p.is_active = true
-    AND p.role = 'user'
-    AND pr.name IN ('Limpeza de Pele', 'Hidratação Facial', 'Peeling Químico', 'Tratamento para Acne')
-  LIMIT 16
+  WHERE pr.name IN ('Limpeza de Pele', 'Hidratação Facial', 'Peeling Químico', 'Tratamento para Acne')
   ON CONFLICT (professional_id, procedure_id) DO NOTHING;
   
   -- Usuário 3: Especialista em Corpo (Massagem, Drenagem)
@@ -233,13 +236,14 @@ BEGIN
   SELECT 
     p.id,
     pr.id
-  FROM profiles p
+  FROM (
+    SELECT id FROM profiles 
+    WHERE id != first_user_id AND is_active = true AND role = 'user'
+    ORDER BY created_at
+    OFFSET 1 LIMIT 1
+  ) p
   CROSS JOIN procedures pr
-  WHERE p.id NOT IN (first_user_id, (SELECT MIN(id) FROM profiles WHERE id != first_user_id AND is_active = true))
-    AND p.is_active = true
-    AND p.role = 'user'
-    AND pr.name IN ('Massagem Relaxante', 'Drenagem Linfática')
-  LIMIT 8
+  WHERE pr.name IN ('Massagem Relaxante', 'Drenagem Linfática')
   ON CONFLICT (professional_id, procedure_id) DO NOTHING;
   
   -- Usuário 4+: Especialista em Estética Facial Rápida (Sobrancelha, Depilação)
@@ -247,16 +251,14 @@ BEGIN
   SELECT 
     p.id,
     pr.id
-  FROM profiles p
+  FROM (
+    SELECT id FROM profiles 
+    WHERE id != first_user_id AND is_active = true AND role = 'user'
+    ORDER BY created_at
+    OFFSET 2
+  ) p
   CROSS JOIN procedures pr
-  WHERE p.id NOT IN (
-    first_user_id,
-    (SELECT id FROM profiles WHERE id != first_user_id AND is_active = true ORDER BY id LIMIT 2)
-  )
-    AND p.is_active = true
-    AND p.role = 'user'
-    AND pr.name IN ('Design de Sobrancelhas', 'Depilação Facial')
-  LIMIT 10
+  WHERE pr.name IN ('Design de Sobrancelhas', 'Depilação Facial')
   ON CONFLICT (professional_id, procedure_id) DO NOTHING;
 
   RAISE NOTICE '═══════════════════════════════════════════════════════════';
