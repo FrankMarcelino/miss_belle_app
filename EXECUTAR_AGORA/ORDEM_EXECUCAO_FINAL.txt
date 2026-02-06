@@ -11,7 +11,7 @@
 ═══════════════════════════════════════════════════════════════════════
 
 Execute:
-📁 02_criar_procedimentos_reais.sql
+📁 02_criar_procedimentos_reais_SAFE.sql
 
 O que faz:
 ✅ Remove procedimentos de teste
