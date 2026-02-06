@@ -43,12 +43,15 @@ Execute UM POR VEZ, nesta ordem:
    ✅ Aguarda: "✅ Migration executada com sucesso!"
 
 
-5️⃣ POR ÚLTIMO (SEED)
-   📁 seed.sql
+5️⃣ POR ÚLTIMO (SEED) - USE A VERSÃO SAFE!
+   📁 seed_SAFE.sql  ⭐⭐⭐ (NOVA VERSÃO - Pode executar múltiplas vezes!)
    ✅ Copia TODO o conteúdo
    ✅ Cola no Supabase SQL Editor
    ✅ Clica RUN ▶️
-   ✅ Aguarda: "NOTICE: Seed concluído com sucesso!"
+   ✅ Aguarda: "✅ Seed concluído com sucesso!"
+   
+   ⚠️  O arquivo seed.sql antigo pode dar erro se executado 2x.
+       Use sempre seed_SAFE.sql!
 
 
 ═══════════════════════════════════════════════════════════════════════
