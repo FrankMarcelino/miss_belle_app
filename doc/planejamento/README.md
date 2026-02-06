@@ -63,6 +63,17 @@ Esta pasta contém a documentação de planejamento e evolução do MVP.
 
 ---
 
+### 6. [fix-appointments-join-ambiguity.md](./fix-appointments-join-ambiguity.md) 🆕
+**Fix crítico** - Agendamentos não apareciam na tela devido a ambiguidade de JOIN.
+
+**Conteúdo**:
+- Diagnóstico do erro PGRST201
+- Solução: especificar FK explicitamente
+- Arquivos corrigidos (Agenda.tsx, Dashboard.tsx)
+- Documentação de sintaxe Supabase
+
+---
+
 ## Como Usar Esta Documentação
 
 ### Para entender o contexto

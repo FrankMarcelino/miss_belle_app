@@ -80,7 +80,7 @@ export default function Agenda() {
           *,
           patient:patients(full_name),
           procedure:procedures(name, duration_minutes),
-          professional:profiles(full_name)
+          professional:profiles!professional_id(full_name)
         `)
         .order('appointment_time');
 

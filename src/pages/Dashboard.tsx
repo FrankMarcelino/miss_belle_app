@@ -143,7 +143,7 @@ export default function Dashboard() {
           appointment_time,
           patient:patients(full_name),
           procedure:procedures(name),
-          professional:profiles(full_name)
+          professional:profiles!professional_id(full_name)
         `)
         .eq('appointment_date', today)
         .gte('appointment_time', now)
