@@ -18,30 +18,32 @@ Este script remove todos os dados de teste (agendamentos, pacientes, procediment
 
 ---
 
-## ⚡ OPÇÃO RÁPIDA: Fazer tudo de uma vez
+## ⚡ OPÇÃO RÁPIDA: Fazer tudo de uma vez (RECOMENDADO!)
 
-Se você **já criou os 3 usuários** no Supabase Auth, execute:
+Execute **apenas 1 arquivo** e pronto:
 
 ```sql
 📁 EXECUTAR_TUDO_DE_UMA_VEZ.sql
 ```
 
-Este script faz TUDO:
-- ✅ Adiciona constraint UNIQUE
+Este script faz **TUDO automaticamente**:
+- ✅ Cria os 3 usuários no auth.users (com senhas hasheadas)
+- ✅ Cria os profiles correspondentes
+- ✅ Adiciona constraint UNIQUE em procedures
+- ✅ Remove dados de teste antigos
 - ✅ Cria 29 procedimentos reais
-- ✅ Cria profiles
-- ✅ Associa procedimentos
+- ✅ Associa procedimentos aos profissionais
+
+**Não precisa fazer NADA manualmente!** 🎉
 
 ---
 
-## 📋 OPÇÃO PASSO A PASSO: Executar por etapas
+## 📋 OPÇÃO PASSO A PASSO: Executar por etapas (se preferir)
 
-### Passo 1: Criar procedimentos
-```sql
-📁 02_criar_procedimentos_reais_SAFE.sql
-```
+⚠️ **Nota**: Use isso apenas se quiser entender cada etapa separadamente. 
+Para produção, use a **Opção Rápida** acima!
 
-### Passo 2: Criar usuários no Supabase Auth
+### Passo 1: Criar usuários manualmente
 **Dashboard → Authentication → Users → Add User**
 
 | Email | Senha | Nome Completo |
@@ -51,6 +53,11 @@ Este script faz TUDO:
 | thais@missabelle.com | Amin123 | Thais |
 
 ⚠️ **Importante**: Marque "Auto Confirm User" ✅
+
+### Passo 2: Criar procedimentos
+```sql
+📁 02_criar_procedimentos_reais_SAFE.sql
+```
 
 ### Passo 3: Criar profiles
 ```sql

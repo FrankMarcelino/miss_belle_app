@@ -4,21 +4,162 @@
 -- ============================================================================
 
 /*
-  ⚠️  ATENÇÃO: Este script cria TUDO de uma vez:
-  1. Adiciona constraint UNIQUE em procedures.name
-  2. Cria todos os procedimentos reais (29)
-  3. Busca os usuários Ana Paula, Sefora e Thais
-  4. Cria os profiles se não existirem
+  🚀 Este script cria TUDO automaticamente:
+  1. Cria usuários no auth.users (Ana Paula, Sefora, Thais)
+  2. Adiciona constraint UNIQUE em procedures.name
+  3. Cria todos os procedimentos reais (29)
+  4. Cria os profiles dos profissionais
   5. Associa procedimentos aos profissionais
   
-  IMPORTANTE: 
-  - Os usuários DEVEM estar criados no Supabase Auth primeiro!
-  - Emails esperados:
-    * anapaulaalmeida@missabelle.com
-    * sefora@missabelle.com
-    * thais@missabelle.com
-  - Senha: Amin123
+  📧 Emails e senhas:
+    • anapaulaalmeida@missabelle.com / Amin123
+    • sefora@missabelle.com / Amin123
+    • thais@missabelle.com / Amin123
+  
+  ⚠️  IMPORTANTE:
+  - A criação de usuários via SQL é um HACK para desenvolvimento
+  - Em produção, use signup normal da aplicação ou Dashboard
+  - As senhas são hasheadas com bcrypt
 */
+
+-- ============================================================================
+-- FUNÇÃO AUXILIAR: Criar usuário no auth (DESENVOLVIMENTO APENAS!)
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION create_auth_user(
+  user_email text,
+  user_password text,
+  user_full_name text,
+  user_role text DEFAULT 'user'
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_user_id uuid;
+  encrypted_pw text;
+BEGIN
+  -- Verificar se usuário já existe
+  SELECT id INTO new_user_id FROM auth.users WHERE email = user_email;
+  
+  IF new_user_id IS NOT NULL THEN
+    RAISE NOTICE '⚠️  Usuário % já existe (ID: %)', user_email, new_user_id;
+    RETURN new_user_id;
+  END IF;
+  
+  -- Gerar novo ID
+  new_user_id := gen_random_uuid();
+  
+  -- Hash da senha usando crypt (disponível via pgcrypto)
+  encrypted_pw := crypt(user_password, gen_salt('bf'));
+  
+  -- Inserir em auth.users
+  INSERT INTO auth.users (
+    instance_id,
+    id,
+    aud,
+    role,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_app_meta_data,
+    raw_user_meta_data,
+    created_at,
+    updated_at,
+    confirmation_token,
+    recovery_token,
+    email_change_token_new
+  ) VALUES (
+    '00000000-0000-0000-0000-000000000000',
+    new_user_id,
+    'authenticated',
+    'authenticated',
+    user_email,
+    encrypted_pw,
+    NOW(), -- Email já confirmado
+    jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
+    jsonb_build_object('full_name', user_full_name),
+    NOW(),
+    NOW(),
+    '',
+    '',
+    ''
+  );
+  
+  -- Inserir em auth.identities
+  INSERT INTO auth.identities (
+    id,
+    user_id,
+    identity_data,
+    provider,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  ) VALUES (
+    gen_random_uuid(),
+    new_user_id,
+    jsonb_build_object('sub', new_user_id::text, 'email', user_email),
+    'email',
+    NOW(),
+    NOW(),
+    NOW()
+  );
+  
+  -- Criar profile correspondente
+  INSERT INTO profiles (id, email, full_name, role, is_active)
+  VALUES (new_user_id, user_email, user_full_name, user_role, true)
+  ON CONFLICT (id) DO UPDATE
+  SET full_name = user_full_name, is_active = true;
+  
+  RAISE NOTICE '✅ Usuário criado: % (ID: %)', user_email, new_user_id;
+  
+  RETURN new_user_id;
+END;
+$$;
+
+-- ============================================================================
+-- ETAPA 0: CRIAR USUÁRIOS NO AUTH
+-- ============================================================================
+
+DO $$
+DECLARE
+  ana_id uuid;
+  sefora_id uuid;
+  thais_id uuid;
+BEGIN
+  RAISE NOTICE '═══════════════════════════════════════════════════════════';
+  RAISE NOTICE '👥 ETAPA 0: Criando usuários no auth.users...';
+  RAISE NOTICE '═══════════════════════════════════════════════════════════';
+  
+  -- Criar os 3 profissionais
+  ana_id := create_auth_user(
+    'anapaulaalmeida@missabelle.com',
+    'Amin123',
+    'Ana Paula Almeida Santana',
+    'user'
+  );
+  
+  sefora_id := create_auth_user(
+    'sefora@missabelle.com',
+    'Amin123',
+    'Sefora',
+    'user'
+  );
+  
+  thais_id := create_auth_user(
+    'thais@missabelle.com',
+    'Amin123',
+    'Thais',
+    'user'
+  );
+  
+  RAISE NOTICE '';
+  RAISE NOTICE '✅ Usuários criados/verificados!';
+  RAISE NOTICE '• Ana Paula: %', ana_id;
+  RAISE NOTICE '• Sefora: %', sefora_id;
+  RAISE NOTICE '• Thais: %', thais_id;
+END $$;
 
 -- ============================================================================
 -- ETAPA 1: PREPARAR TABELA PROCEDURES
@@ -181,48 +322,11 @@ BEGIN
   SELECT id INTO thais_id FROM auth.users WHERE email = 'thais@missabelle.com';
   
   -- Criar profiles
-  IF ana_id IS NOT NULL THEN
-    INSERT INTO profiles (id, email, full_name, role, is_active)
-    VALUES (ana_id, 'anapaulaalmeida@missabelle.com', 'Ana Paula Almeida Santana', 'user', true)
-    ON CONFLICT (id) DO UPDATE
-    SET full_name = 'Ana Paula Almeida Santana', is_active = true;
-    RAISE NOTICE '✅ Ana Paula profile criado/atualizado';
+  -- Verificar se profiles foram criados (já feito na Etapa 0)
+  IF ana_id IS NOT NULL AND sefora_id IS NOT NULL AND thais_id IS NOT NULL THEN
+    RAISE NOTICE '✅ Todos os profiles verificados e ativos';
   ELSE
-    RAISE WARNING '⚠️  Ana Paula NÃO encontrada no auth.users!';
-  END IF;
-  
-  IF sefora_id IS NOT NULL THEN
-    INSERT INTO profiles (id, email, full_name, role, is_active)
-    VALUES (sefora_id, 'sefora@missabelle.com', 'Sefora', 'user', true)
-    ON CONFLICT (id) DO UPDATE
-    SET full_name = 'Sefora', is_active = true;
-    RAISE NOTICE '✅ Sefora profile criado/atualizado';
-  ELSE
-    RAISE WARNING '⚠️  Sefora NÃO encontrada no auth.users!';
-  END IF;
-  
-  IF thais_id IS NOT NULL THEN
-    INSERT INTO profiles (id, email, full_name, role, is_active)
-    VALUES (thais_id, 'thais@missabelle.com', 'Thais', 'user', true)
-    ON CONFLICT (id) DO UPDATE
-    SET full_name = 'Thais', is_active = true;
-    RAISE NOTICE '✅ Thais profile criado/atualizado';
-  ELSE
-    RAISE WARNING '⚠️  Thais NÃO encontrada no auth.users!';
-  END IF;
-  
-  IF ana_id IS NULL OR sefora_id IS NULL OR thais_id IS NULL THEN
-    RAISE WARNING '';
-    RAISE WARNING '═══════════════════════════════════════════════════════════';
-    RAISE WARNING '⚠️  ATENÇÃO: Alguns usuários não foram encontrados!';
-    RAISE WARNING '';
-    RAISE WARNING 'Você precisa criar os usuários primeiro:';
-    RAISE WARNING 'Dashboard → Authentication → Users → Add User';
-    RAISE WARNING '';
-    RAISE WARNING '1. anapaulaalmeida@missabelle.com / Amin123';
-    RAISE WARNING '2. sefora@missabelle.com / Amin123';
-    RAISE WARNING '3. thais@missabelle.com / Amin123';
-    RAISE WARNING '═══════════════════════════════════════════════════════════';
+    RAISE WARNING '⚠️  Alguns usuários não foram criados na Etapa 0!';
   END IF;
 END $$;
 
@@ -301,18 +405,30 @@ BEGIN
   RAISE NOTICE '🎉 CONCLUÍDO COM SUCESSO!';
   RAISE NOTICE '═══════════════════════════════════════════════════════════';
   RAISE NOTICE '';
-  RAISE NOTICE '📊 Resumo:';
-  RAISE NOTICE '• Procedimentos criados: 29';
+  RAISE NOTICE '📊 Resumo da criação:';
+  RAISE NOTICE '• Usuários no auth.users: 3';
   RAISE NOTICE '• Profiles criados: 3';
-  RAISE NOTICE '• Associações criadas: 29';
+  RAISE NOTICE '• Procedimentos criados: 29';
+  RAISE NOTICE '• Associações profissional-procedimento: 29';
   RAISE NOTICE '';
-  RAISE NOTICE '🔐 Login:';
+  RAISE NOTICE '👥 Profissionais criados:';
+  RAISE NOTICE '• Ana Paula Almeida Santana - 13 procedimentos (Estética Facial)';
+  RAISE NOTICE '• Sefora - 6 procedimentos (Maquiagem)';
+  RAISE NOTICE '• Thais - 10 procedimentos (Cabelo)';
+  RAISE NOTICE '';
+  RAISE NOTICE '🔐 Credenciais de Login:';
   RAISE NOTICE '• anapaulaalmeida@missabelle.com / Amin123';
   RAISE NOTICE '• sefora@missabelle.com / Amin123';
   RAISE NOTICE '• thais@missabelle.com / Amin123';
   RAISE NOTICE '';
+  RAISE NOTICE '🚀 PRÓXIMO PASSO:';
+  RAISE NOTICE 'Faça login na aplicação e teste!';
+  RAISE NOTICE '';
   RAISE NOTICE '═══════════════════════════════════════════════════════════';
 END $$;
+
+-- Limpar função temporária
+DROP FUNCTION IF EXISTS create_auth_user(text, text, text, text);
 
 -- Validação final
 SELECT 

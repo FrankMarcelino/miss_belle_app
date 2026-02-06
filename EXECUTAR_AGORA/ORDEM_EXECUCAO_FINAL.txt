@@ -1,36 +1,66 @@
 ═══════════════════════════════════════════════════════════════════════
- 🎯 ORDEM FINAL DE EXECUÇÃO - MISS BELLE APP
+ 🎯 MODO SUPER RÁPIDO - MISS BELLE APP
 ═══════════════════════════════════════════════════════════════════════
 
 📍 Local: Supabase SQL Editor
 🔐 Senha padrão: Amin123
+⏱️  Tempo: ~30 segundos
 
 
 ═══════════════════════════════════════════════════════════════════════
- ETAPA 1: CRIAR PROCEDIMENTOS REAIS
+ ⚡ EXECUTE APENAS 1 ARQUIVO E PRONTO!
 ═══════════════════════════════════════════════════════════════════════
 
 Execute:
-📁 02_criar_procedimentos_reais_SAFE.sql
+📁 EXECUTAR_TUDO_DE_UMA_VEZ.sql
 
-O que faz:
-✅ Remove procedimentos de teste
+Este arquivo faz TUDO automaticamente:
+✅ Cria 3 usuários no auth.users (com senhas hasheadas)
+✅ Cria profiles dos profissionais
+✅ Remove dados de teste antigos
+✅ Adiciona constraint UNIQUE
 ✅ Cria 29 procedimentos reais
-✅ Distribui por profissional:
-   • Ana Paula: 13 procedimentos (Estética Facial + Cílios)
-   • Sefora: 6 procedimentos (Maquiagem)
-   • Thais: 10 procedimentos (Cabelo)
+✅ Associa procedimentos aos profissionais
 
-Aguarde: "✅ Procedimentos criados com sucesso!"
+NÃO precisa fazer NADA manualmente! 🎉
+
+
+Mensagens esperadas:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ETAPA 0: Criando usuários no auth.users...
+✅ Usuário criado: anapaulaalmeida@missabelle.com
+✅ Usuário criado: sefora@missabelle.com
+✅ Usuário criado: thais@missabelle.com
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ETAPA 1: Preparando tabela procedures...
+✅ Constraint UNIQUE adicionada
+✅ X transações removidas
+✅ X agendamentos removidos
+✅ X procedimentos removidos
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ETAPA 2: Criando procedimentos...
+(29 procedimentos inseridos)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ETAPA 3: Verificando profiles...
+✅ Todos os profiles verificados e ativos
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ETAPA 4: Associando procedimentos...
+✅ Ana Paula: 13 procedimentos associados
+✅ Sefora: 6 procedimentos associados
+✅ Thais: 10 procedimentos associados
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎉 CONCLUÍDO COM SUCESSO!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 
 ═══════════════════════════════════════════════════════════════════════
- ETAPA 2: CRIAR OS 3 USUÁRIOS
+ 📋 MODO PASSO A PASSO (Opcional - se quiser entender cada etapa)
 ═══════════════════════════════════════════════════════════════════════
 
+Se preferir executar etapa por etapa manualmente:
+
+ETAPA 1: Criar usuários no Dashboard
 Vá em: Supabase Dashboard → Authentication → Users → Add User
-
-Crie cada usuário:
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │ 👩 USUÁRIO 1: ANA PAULA                                             │
@@ -56,56 +86,8 @@ Crie cada usuário:
 │ Auto Confirm User: ✅ (marque esta opção!)                          │
 └─────────────────────────────────────────────────────────────────────┘
 
-
-═══════════════════════════════════════════════════════════════════════
- ETAPA 3: CRIAR PROFILES
-═══════════════════════════════════════════════════════════════════════
-
-Depois de criar os usuários no Auth, execute no SQL Editor:
-
-```sql
-DO $$
-DECLARE
-  ana_id uuid;
-  sefora_id uuid;
-  thais_id uuid;
-BEGIN
-  -- Buscar IDs do auth.users
-  SELECT id INTO ana_id FROM auth.users WHERE email = 'anapaulaalmeida@missabelle.com';
-  SELECT id INTO sefora_id FROM auth.users WHERE email = 'sefora@missabelle.com';
-  SELECT id INTO thais_id FROM auth.users WHERE email = 'thais@missabelle.com';
-  
-  -- Criar profiles
-  INSERT INTO profiles (id, email, full_name, role, is_active) VALUES
-    (ana_id, 'anapaulaalmeida@missabelle.com', 'Ana Paula Almeida Santana', 'user', true),
-    (sefora_id, 'sefora@missabelle.com', 'Sefora', 'user', true),
-    (thais_id, 'thais@missabelle.com', 'Thais', 'user', true)
-  ON CONFLICT (id) DO UPDATE
-  SET full_name = EXCLUDED.full_name, is_active = EXCLUDED.is_active;
-  
-  RAISE NOTICE '✅ Profiles criados!';
-END $$;
-```
-
-Aguarde: "✅ Profiles criados!"
-
-
-═══════════════════════════════════════════════════════════════════════
- ETAPA 4: ASSOCIAR PROCEDIMENTOS
-═══════════════════════════════════════════════════════════════════════
-
-Execute:
-📁 03_associar_procedimentos.sql
-
-O que faz:
-✅ Busca IDs dos profissionais
-✅ Associa procedimentos específicos de cada um
-✅ Mostra quantos foram associados
-
-Aguarde:
-"✅ Ana Paula: 13 procedimentos associados"
-"✅ Sefora: 6 procedimentos associados"
-"✅ Thais: 10 procedimentos associados"
+ETAPA 2: Execute 📁 02_criar_procedimentos_reais_SAFE.sql
+ETAPA 3: Execute 📁 03_associar_procedimentos.sql
 
 
 ═══════════════════════════════════════════════════════════════════════
