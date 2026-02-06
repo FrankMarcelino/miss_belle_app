@@ -171,9 +171,27 @@ export default function Agenda() {
     }
   };
 
+  // Filter appointments based on search and status
+  const filteredAppointments = appointments.filter((apt) => {
+    // Status filter
+    if (statusFilter !== 'all' && apt.status !== statusFilter) {
+      return false;
+    }
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const patientName = apt.patient?.full_name?.toLowerCase() || '';
+      const procedureName = apt.procedure?.name?.toLowerCase() || '';
+      return patientName.includes(query) || procedureName.includes(query);
+    }
+
+    return true;
+  });
+
   const groupedAppointments = viewMode === 'day'
-    ? { [currentDate.toISOString().split('T')[0]]: appointments }
-    : appointments.reduce((acc, apt) => {
+    ? { [currentDate.toISOString().split('T')[0]]: filteredAppointments }
+    : filteredAppointments.reduce((acc, apt) => {
         if (!acc[apt.appointment_date]) {
           acc[apt.appointment_date] = [];
         }
@@ -209,6 +227,44 @@ export default function Agenda() {
           <Plus className="w-5 h-5" />
           Novo Agendamento
         </button>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="space-y-3">
+        {/* Search Bar */}
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por paciente ou procedimento..."
+            className="w-full pl-12 pr-4 py-3 bg-background-card border border-accent/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base shadow-soft"
+          />
+        </div>
+
+        {/* Status Filter Chips */}
+        <div className="flex gap-2 overflow-x-auto pb-2 scroll-hidden">
+          {[
+            { value: 'all', label: 'Todos' },
+            { value: 'scheduled', label: 'Marcados' },
+            { value: 'confirmed', label: 'Confirmados' },
+            { value: 'completed', label: 'Realizados' },
+            { value: 'cancelled', label: 'Cancelados' },
+          ].map((filter) => (
+            <button
+              key={filter.value}
+              onClick={() => setStatusFilter(filter.value)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
+                statusFilter === filter.value
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-background-card text-text border-accent/20 hover:bg-champagne-nuvem'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
@@ -453,23 +509,23 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
     <>
       <div
         onClick={() => setShowDetails(true)}
-        className="bg-champagne-nuvem rounded-lg p-4 border border-accent/20 hover:shadow-soft transition-all cursor-pointer"
+        className="bg-champagne-nuvem rounded-xl p-5 border border-accent/20 hover:shadow-soft transition-all cursor-pointer active:scale-[0.98] min-h-[80px] md:min-h-[72px]"
       >
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex items-center gap-2 text-text font-semibold">
-                <Clock className="w-4 h-4" />
-                {appointment.appointment_time.substring(0, 5)}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-2 text-text font-bold text-lg">
+                <Clock className="w-5 h-5 flex-shrink-0" />
+                <span className="text-base">{appointment.appointment_time.substring(0, 5)}</span>
               </div>
-              <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(appointment.status)}`}>
+              <span className={`px-3 py-1.5 rounded-full text-xs font-semibold border whitespace-nowrap ${getStatusColor(appointment.status)}`}>
                 {getStatusLabel(appointment.status)}
               </span>
             </div>
-            <h4 className="text-text font-semibold mb-1">{appointment.patient?.full_name}</h4>
-            <p className="text-text-muted text-sm">{appointment.procedure?.name}</p>
+            <h4 className="text-text font-semibold text-base mb-1.5 truncate">{appointment.patient?.full_name}</h4>
+            <p className="text-text-muted text-sm mb-1 truncate">{appointment.procedure?.name}</p>
             {appointment.professional && (
-              <p className="text-text-muted text-sm">
+              <p className="text-text-muted text-sm truncate">
                 Profissional: {appointment.professional.full_name}
               </p>
             )}
@@ -477,20 +533,24 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
         </div>
       </div>
 
-      {showDetails && (
-        <AppointmentDetailsModal
+      <BottomSheet
+        isOpen={showDetails}
+        onClose={() => setShowDetails(false)}
+        title="Detalhes do Agendamento"
+      >
+        <AppointmentDetailsContent
           appointment={appointment}
           onClose={() => setShowDetails(false)}
           onRefresh={onRefresh}
           getStatusColor={getStatusColor}
           getStatusLabel={getStatusLabel}
         />
-      )}
+      </BottomSheet>
     </>
   );
 }
 
-interface AppointmentDetailsModalProps {
+interface AppointmentDetailsContentProps {
   appointment: Appointment;
   onClose: () => void;
   onRefresh: () => void;
@@ -498,13 +558,13 @@ interface AppointmentDetailsModalProps {
   getStatusLabel: (status: string) => string;
 }
 
-function AppointmentDetailsModal({
+function AppointmentDetailsContent({
   appointment,
   onClose,
   onRefresh,
   getStatusColor,
   getStatusLabel,
-}: AppointmentDetailsModalProps) {
+}: AppointmentDetailsContentProps) {
   const [updating, setUpdating] = useState(false);
   const [showCancelReason, setShowCancelReason] = useState(false);
   const [cancellationReason, setCancellationReason] = useState('');
@@ -539,14 +599,7 @@ function AppointmentDetailsModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
-        <div className="flex items-start justify-between mb-6">
-          <h2 className="text-xl font-semibold text-text">Detalhes do Agendamento</h2>
-          <button onClick={onClose} className="p-1 hover:bg-champagne-nuvem rounded-lg transition-colors">
-            <X className="w-5 h-5 text-text-muted" />
-          </button>
-        </div>
+    <div>
 
         <div className="space-y-4">
           <div>
@@ -626,12 +679,12 @@ function AppointmentDetailsModal({
           {!showCancelReason && (
             <div className="pt-4 border-t border-accent/20">
               <label className="text-sm font-medium text-text mb-3 block">Alterar Status</label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3">
                 {appointment.status !== 'confirmed' && appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
                   <button
                     onClick={() => updateStatus('confirmed')}
                     disabled={updating}
-                    className="px-3 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                    className="btn-touch bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     Confirmar
                   </button>
@@ -640,7 +693,7 @@ function AppointmentDetailsModal({
                   <button
                     onClick={() => updateStatus('completed')}
                     disabled={updating}
-                    className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                    className="btn-touch bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     Concluir
                   </button>
@@ -649,7 +702,7 @@ function AppointmentDetailsModal({
                   <button
                     onClick={() => updateStatus('cancelled')}
                     disabled={updating}
-                    className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                    className="btn-touch bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     Cancelar
                   </button>
@@ -658,7 +711,6 @@ function AppointmentDetailsModal({
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
