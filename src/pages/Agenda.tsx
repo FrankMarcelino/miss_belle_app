@@ -500,13 +500,25 @@ function AppointmentDetailsModal({
   getStatusLabel,
 }: AppointmentDetailsModalProps) {
   const [updating, setUpdating] = useState(false);
+  const [showCancelReason, setShowCancelReason] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState('');
 
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
+    if (newStatus === 'cancelled' && !showCancelReason) {
+      setShowCancelReason(true);
+      return;
+    }
+
     setUpdating(true);
     try {
+      const updateData: any = { status: newStatus };
+      if (newStatus === 'cancelled' && cancellationReason) {
+        updateData.cancellation_reason = cancellationReason;
+      }
+
       const { error } = await supabase
         .from('appointments')
-        .update({ status: newStatus })
+        .update(updateData)
         .eq('id', appointment.id);
 
       if (error) throw error;
@@ -565,38 +577,80 @@ function AppointmentDetailsModal({
             </div>
           )}
 
-          <div className="pt-4 border-t border-accent/20">
-            <label className="text-sm font-medium text-text mb-3 block">Alterar Status</label>
-            <div className="grid grid-cols-2 gap-2">
-              {appointment.status !== 'confirmed' && appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+          {appointment.status === 'cancelled' && appointment.cancellation_reason && (
+            <div>
+              <label className="text-sm text-text-muted">Motivo do Cancelamento</label>
+              <p className="text-text font-medium">{appointment.cancellation_reason}</p>
+            </div>
+          )}
+
+          {showCancelReason && (
+            <div className="pt-4 border-t border-accent/20">
+              <label className="block text-sm font-medium text-text mb-2">
+                Motivo do Cancelamento (opcional)
+              </label>
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+                rows={3}
+                placeholder="Por que este agendamento foi cancelado?"
+                disabled={updating}
+              />
+              <div className="flex gap-3 mt-3">
                 <button
-                  onClick={() => updateStatus('confirmed')}
+                  type="button"
+                  onClick={() => setShowCancelReason(false)}
+                  className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
                   disabled={updating}
-                  className="px-3 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
-                  Confirmar
+                  Voltar
                 </button>
-              )}
-              {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
-                <button
-                  onClick={() => updateStatus('completed')}
-                  disabled={updating}
-                  className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
-                >
-                  Concluir
-                </button>
-              )}
-              {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
                 <button
                   onClick={() => updateStatus('cancelled')}
                   disabled={updating}
-                  className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50"
                 >
-                  Cancelar
+                  {updating ? 'Cancelando...' : 'Confirmar Cancelamento'}
                 </button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {!showCancelReason && (
+            <div className="pt-4 border-t border-accent/20">
+              <label className="text-sm font-medium text-text mb-3 block">Alterar Status</label>
+              <div className="grid grid-cols-2 gap-2">
+                {appointment.status !== 'confirmed' && appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                  <button
+                    onClick={() => updateStatus('confirmed')}
+                    disabled={updating}
+                    className="px-3 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                  >
+                    Confirmar
+                  </button>
+                )}
+                {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                  <button
+                    onClick={() => updateStatus('completed')}
+                    disabled={updating}
+                    className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                  >
+                    Concluir
+                  </button>
+                )}
+                {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
+                  <button
+                    onClick={() => updateStatus('cancelled')}
+                    disabled={updating}
+                    className="px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-lg text-sm transition-colors disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -692,18 +746,19 @@ function CreateAppointmentModal({
 
   async function checkConflict() {
     try {
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('id')
-        .eq('professional_id', professionalId)
-        .eq('appointment_date', appointmentDate)
-        .eq('appointment_time', appointmentTime)
-        .neq('status', 'cancelled');
+      const { data, error } = await supabase.rpc('check_appointment_conflict', {
+        p_professional_id: professionalId,
+        p_appointment_date: appointmentDate,
+        p_appointment_time: appointmentTime,
+        p_procedure_id: procedureId,
+        p_appointment_id: null
+      });
 
       if (error) throw error;
-      setConflict((data || []).length > 0);
+      setConflict(data === true);
     } catch (error) {
       console.error('Error checking conflict:', error);
+      setConflict(false);
     }
   }
 

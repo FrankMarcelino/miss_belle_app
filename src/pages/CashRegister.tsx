@@ -309,6 +309,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddTransaction, setShowAddTransaction] = useState(false);
+  const [currentClosing, setCurrentClosing] = useState<CashRegisterClosing>(closing);
 
   useEffect(() => {
     loadTransactions();
@@ -317,6 +318,19 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
   async function loadTransactions() {
     try {
       setLoading(true);
+      
+      // Reload closing to get updated total from database
+      const { data: closingData, error: closingError } = await supabase
+        .from('cash_register_closings')
+        .select('*, professional:profiles(full_name)')
+        .eq('id', closing.id)
+        .single();
+
+      if (closingError) throw closingError;
+      if (closingData) {
+        setCurrentClosing(closingData);
+      }
+
       const { data, error } = await supabase
         .from('cash_register_transactions')
         .select(`
@@ -351,23 +365,13 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
 
       if (error) throw error;
 
-      await updateTotal();
+      // Trigger will automatically update the closing total
       loadTransactions();
       onUpdate();
     } catch (error) {
       console.error('Error deleting transaction:', error);
+      alert('Erro ao excluir transação. Verifique se o fechamento não está finalizado.');
     }
-  }
-
-  async function updateTotal() {
-    const total = transactions
-      .filter((t) => t.id !== transactions[0]?.id)
-      .reduce((sum, t) => sum + t.amount, 0);
-
-    await supabase
-      .from('cash_register_closings')
-      .update({ total_amount: total })
-      .eq('id', closing.id);
   }
 
   async function finalizeClosing() {
@@ -382,7 +386,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           is_finalized: true,
           finalized_at: new Date().toISOString(),
         })
-        .eq('id', closing.id);
+        .eq('id', currentClosing.id);
 
       if (error) throw error;
 
@@ -392,8 +396,6 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       console.error('Error finalizing closing:', error);
     }
   }
-
-  const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -421,10 +423,10 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
               <p className="text-sm text-text-muted mb-1">Total do Dia</p>
               <div className="flex items-center gap-2 text-3xl font-bold text-text">
                 <DollarSign className="w-8 h-8" />
-                R$ {totalAmount.toFixed(2)}
+                R$ {currentClosing.total_amount.toFixed(2)}
               </div>
             </div>
-            {closing.is_finalized ? (
+            {currentClosing.is_finalized ? (
               <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 font-medium rounded-lg border border-green-200">
                 <Check className="w-5 h-5" />
                 Finalizado
@@ -441,7 +443,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           </div>
         </div>
 
-        {!closing.is_finalized && (
+        {!currentClosing.is_finalized && (
           <div className="mb-6">
             <button
               onClick={() => setShowAddTransaction(true)}
@@ -488,7 +490,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
                       <p className="text-sm text-text-muted mt-1">{transaction.notes}</p>
                     )}
                   </div>
-                  {!closing.is_finalized && (
+                  {!currentClosing.is_finalized && (
                     <button
                       onClick={() => deleteTransaction(transaction.id)}
                       className="p-2 hover:bg-background rounded-lg transition-colors text-red-600"
@@ -502,10 +504,10 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           </div>
         )}
 
-        {showAddTransaction && !closing.is_finalized && (
+        {showAddTransaction && !currentClosing.is_finalized && (
           <AddTransactionModal
-            closingId={closing.id}
-            professionalId={closing.professional_id}
+            closingId={currentClosing.id}
+            professionalId={currentClosing.professional_id}
             onClose={() => setShowAddTransaction(false)}
             onSuccess={() => {
               setShowAddTransaction(false);
@@ -572,24 +574,11 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
 
       if (transactionError) throw transactionError;
 
-      const { data: transactions } = await supabase
-        .from('cash_register_transactions')
-        .select('amount')
-        .eq('closing_id', closingId);
-
-      const total = (transactions || []).reduce((sum, t) => sum + t.amount, 0) + parseFloat(amount);
-
-      const { error: updateError } = await supabase
-        .from('cash_register_closings')
-        .update({ total_amount: total })
-        .eq('id', closingId);
-
-      if (updateError) throw updateError;
-
+      // Trigger will automatically update the closing total
       onSuccess();
     } catch (error: any) {
       console.error('Error adding transaction:', error);
-      alert(error.message || 'Erro ao adicionar transação');
+      alert(error.message || 'Erro ao adicionar transação. Verifique se o fechamento não está finalizado.');
     } finally {
       setLoading(false);
     }
