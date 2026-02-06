@@ -380,8 +380,12 @@ export default function Agenda() {
         )}
       </div>
 
-      {showCreateModal && (
-        <CreateAppointmentModal
+      <BottomSheet
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="Novo Agendamento"
+      >
+        <CreateAppointmentForm
           defaultDate={currentDate.toISOString().split('T')[0]}
           defaultProfessionalId={selectedProfessional || user?.id || ''}
           onClose={() => setShowCreateModal(false)}
@@ -390,7 +394,7 @@ export default function Agenda() {
             loadAppointments();
           }}
         />
-      )}
+      </BottomSheet>
     </div>
   );
 }
@@ -715,19 +719,19 @@ function AppointmentDetailsContent({
   );
 }
 
-interface CreateAppointmentModalProps {
+interface CreateAppointmentFormProps {
   defaultDate: string;
   defaultProfessionalId: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-function CreateAppointmentModal({
+function CreateAppointmentForm({
   defaultDate,
   defaultProfessionalId,
   onClose,
   onSuccess,
-}: CreateAppointmentModalProps) {
+}: CreateAppointmentFormProps) {
   const { user, isSuperAdmin } = useAuth();
   const [patientId, setPatientId] = useState('');
   const [procedureId, setProcedureId] = useState('');
@@ -738,12 +742,10 @@ function CreateAppointmentModal({
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
 
-  const [patients, setPatients] = useState<Patient[]>([]);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
 
   useEffect(() => {
-    loadPatients();
     loadProcedures();
     if (isSuperAdmin) {
       loadProfessionals();
@@ -755,22 +757,6 @@ function CreateAppointmentModal({
       checkConflict();
     }
   }, [patientId, procedureId, professionalId, appointmentDate, appointmentTime]);
-
-  async function loadPatients() {
-    try {
-      let query = supabase.from('patients').select('id, full_name').order('full_name');
-
-      if (!isSuperAdmin && user) {
-        query = query.eq('professional_id', user.id);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      setPatients(data || []);
-    } catch (error) {
-      console.error('Error loading patients:', error);
-    }
-  }
 
   async function loadProcedures() {
     try {
@@ -853,131 +839,141 @@ function CreateAppointmentModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20 my-8">
-        <div className="flex items-start justify-between mb-6">
-          <h2 className="text-xl font-semibold text-text">Novo Agendamento</h2>
-          <button onClick={onClose} className="p-1 hover:bg-champagne-nuvem rounded-lg transition-colors">
-            <X className="w-5 h-5 text-text-muted" />
-          </button>
+    <form onSubmit={handleSubmit} className="space-y-5">
+      {/* Patient Autocomplete */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">
+          Paciente *
+        </label>
+        <PatientAutocomplete
+          value={patientId}
+          onChange={setPatientId}
+          professionalId={professionalId}
+          placeholder="Digite o nome do paciente..."
+        />
+      </div>
+
+      {/* Procedure Grid */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-3">
+          Procedimento *
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          {procedures.map((procedure) => (
+            <button
+              key={procedure.id}
+              type="button"
+              onClick={() => setProcedureId(procedure.id)}
+              className={`p-4 rounded-xl border-2 transition-all text-left ${
+                procedureId === procedure.id
+                  ? 'border-primary bg-primary/10'
+                  : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+              }`}
+            >
+              <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
+                {procedure.name}
+              </p>
+              <p className="text-xs text-text-muted">
+                {procedure.duration_minutes} min
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Professional (Super Admin only) */}
+      {isSuperAdmin && (
+        <div>
+          <label className="block text-sm font-medium text-text mb-2">
+            Profissional *
+          </label>
+          <select
+            value={professionalId}
+            onChange={(e) => setProfessionalId(e.target.value)}
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            required
+            disabled={loading}
+          >
+            <option value="">Selecione um profissional</option>
+            {professionals.map((prof) => (
+              <option key={prof.id} value={prof.id}>
+                {prof.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Date and Time */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium text-text mb-2">Data *</label>
+          <input
+            type="date"
+            value={appointmentDate}
+            onChange={(e) => setAppointmentDate(e.target.value)}
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            required
+            disabled={loading}
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">Paciente</label>
-            <select
-              value={patientId}
-              onChange={(e) => setPatientId(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              required
-              disabled={loading}
-            >
-              <option value="">Selecione um paciente</option>
-              {patients.map((patient) => (
-                <option key={patient.id} value={patient.id}>
-                  {patient.full_name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">Procedimento</label>
-            <select
-              value={procedureId}
-              onChange={(e) => setProcedureId(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              required
-              disabled={loading}
-            >
-              <option value="">Selecione um procedimento</option>
-              {procedures.map((procedure) => (
-                <option key={procedure.id} value={procedure.id}>
-                  {procedure.name} ({procedure.duration_minutes} min)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {isSuperAdmin && (
-            <div>
-              <label className="block text-sm font-medium text-text mb-2">Profissional</label>
-              <select
-                value={professionalId}
-                onChange={(e) => setProfessionalId(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                required
-                disabled={loading}
-              >
-                <option value="">Selecione um profissional</option>
-                {professionals.map((prof) => (
-                  <option key={prof.id} value={prof.id}>
-                    {prof.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">Data</label>
-            <input
-              type="date"
-              value={appointmentDate}
-              onChange={(e) => setAppointmentDate(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              required
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">Horário</label>
-            <input
-              type="time"
-              value={appointmentTime}
-              onChange={(e) => setAppointmentTime(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              required
-              disabled={loading}
-            />
-          </div>
-
-          {conflict && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-              <div>
-                <strong>Conflito de horário!</strong>
-                <p>Já existe um agendamento para este profissional neste horário.</p>
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
-              disabled={loading}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50"
-              disabled={loading || conflict}
-            >
-              {loading ? 'Salvando...' : 'Agendar'}
-            </button>
-          </div>
-        </form>
+        <div>
+          <label className="block text-sm font-medium text-text mb-2">Horário *</label>
+          <input
+            type="time"
+            value={appointmentTime}
+            onChange={(e) => setAppointmentTime(e.target.value)}
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            required
+            disabled={loading}
+          />
+        </div>
       </div>
-    </div>
+
+      {/* Conflict Warning */}
+      {conflict && (
+        <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+          <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold mb-1">Conflito de horário!</p>
+            <p className="text-xs">Já existe um agendamento para este profissional neste horário.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex gap-3 pt-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 btn-touch border border-accent/30 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
+          disabled={loading}
+        >
+          Cancelar
+        </button>
+        <button
+          type="submit"
+          className="flex-1 btn-touch bg-primary hover:bg-primary-hover text-white rounded-xl transition-colors disabled:opacity-50 font-semibold"
+          disabled={loading || conflict || !patientId || !procedureId}
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Salvando...
+            </span>
+          ) : (
+            'Agendar'
+          )}
+        </button>
+      </div>
+    </form>
   );
 }
