@@ -68,14 +68,34 @@ BEGIN
   SELECT ARRAY_AGG(id) INTO procedure_ids FROM procedures WHERE is_active = true;
 
   -- ----------------------------------------------------------------------------
-  -- 2. PATIENTS (DELETE + INSERT para evitar duplicatas)
+  -- 2. LIMPAR DADOS ANTIGOS (ORDEM CORRETA!)
+  -- ----------------------------------------------------------------------------
+  RAISE NOTICE 'Limpando dados antigos...';
+  
+  -- IMPORTANTE: Deletar na ordem reversa de dependências!
+  -- 1º Transações (dependem de closings e appointments)
+  DELETE FROM cash_register_transactions 
+  WHERE closing_id IN (
+    SELECT id FROM cash_register_closings WHERE professional_id = first_user_id
+  );
+  
+  -- 2º Closings (dependem de professional)
+  DELETE FROM cash_register_closings WHERE professional_id = first_user_id;
+  
+  -- 3º Appointments (dependem de patients, procedures, professional)
+  DELETE FROM appointments WHERE professional_id = first_user_id;
+  
+  -- 4º Patients (agora pode deletar, sem appointments referenciando)
+  DELETE FROM patients WHERE professional_id = first_user_id;
+  
+  -- 5º Professional procedures (associações)
+  DELETE FROM professional_procedures WHERE professional_id = first_user_id;
+
+  -- ----------------------------------------------------------------------------
+  -- 3. PATIENTS (INSERT)
   -- ----------------------------------------------------------------------------
   RAISE NOTICE 'Criando pacientes...';
   
-  -- Deletar pacientes antigos do seed (IDs conhecidos)
-  DELETE FROM patients WHERE professional_id = first_user_id;
-  
-  -- Inserir novos
   INSERT INTO patients (full_name, phone, email, notes, professional_id, created_at) VALUES
     ('Ana Paula Silva', '(11) 98765-4321', 'ana.silva@email.com', 'Cliente VIP - Prefere manhãs', first_user_id, NOW()),
     ('Beatriz Costa', '(11) 97654-3210', 'bia.costa@email.com', NULL, first_user_id, NOW()),
@@ -88,12 +108,9 @@ BEGIN
   RETURNING ARRAY_AGG(id) INTO patient_ids;
 
   -- ----------------------------------------------------------------------------
-  -- 3. APPOINTMENTS (DELETE + INSERT)
+  -- 4. APPOINTMENTS (INSERT)
   -- ----------------------------------------------------------------------------
   RAISE NOTICE 'Criando agendamentos...';
-  
-  -- Deletar agendamentos antigos do seed
-  DELETE FROM appointments WHERE professional_id = first_user_id;
   
   -- Inserir novos
   INSERT INTO appointments (patient_id, procedure_id, professional_id, appointment_date, appointment_time, status, created_by) VALUES
@@ -114,12 +131,9 @@ BEGIN
     (patient_ids[2], procedure_ids[3], first_user_id, CURRENT_DATE + 1, '11:00', 'scheduled', first_user_id);
 
   -- ----------------------------------------------------------------------------
-  -- 3.1. CASH REGISTER CLOSINGS (DELETE + INSERT)
+  -- 5. CASH REGISTER CLOSINGS (INSERT)
   -- ----------------------------------------------------------------------------
   RAISE NOTICE 'Criando fechamentos de caixa...';
-  
-  -- Deletar fechamentos antigos do seed
-  DELETE FROM cash_register_closings WHERE professional_id = first_user_id;
   
   -- Fechamento de ontem (finalizado)
   INSERT INTO cash_register_closings (professional_id, closing_date, total_amount, is_finalized, finalized_at, notes)
@@ -132,7 +146,7 @@ BEGIN
   RETURNING id INTO today_closing_id;
 
   -- ----------------------------------------------------------------------------
-  -- 3.2. CASH REGISTER TRANSACTIONS
+  -- 6. CASH REGISTER TRANSACTIONS
   -- ----------------------------------------------------------------------------
   RAISE NOTICE 'Criando transações...';
   
@@ -175,7 +189,7 @@ BEGIN
   LIMIT 1;
 
   -- ----------------------------------------------------------------------------
-  -- 3.5. PROFESSIONAL PROCEDURES (Associações)
+  -- 7. PROFESSIONAL PROCEDURES (Associações)
   -- ----------------------------------------------------------------------------
   RAISE NOTICE 'Criando associações profissional-procedimento...';
   
