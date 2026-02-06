@@ -29,16 +29,30 @@ Esta pasta contém a documentação de planejamento e evolução do MVP.
 
 ---
 
+### 3. [guia-de-testes.md](./guia-de-testes.md) 🆕
+**Guia completo de testes** com cenários práticos usando dados do seed.
+
+**Conteúdo**:
+- 9 cenários de teste detalhados
+- Passos exatos e resultados esperados
+- Troubleshooting comum
+- Checklist de validação completa
+
+---
+
 ## Como Usar Esta Documentação
 
 ### Para entender o contexto
 Leia primeiro: `mvp-crud-agenda-caixa.md`
 
-### Para validar a implementação
-Leia: `changelog-mvp-melhorias.md` > seção "Testes de Validação"
-
 ### Para aplicar as mudanças no banco
 Leia: `changelog-mvp-melhorias.md` > seção "Como Aplicar as Migrations"
+
+### Para popular o banco com dados de teste
+Execute o arquivo: `../../supabase/seed.sql` no SQL Editor do Supabase
+
+### Para testar o sistema completo
+Siga o guia: `guia-de-testes.md` (9 cenários com passo a passo)
 
 ---
 
