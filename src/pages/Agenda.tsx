@@ -749,11 +749,17 @@ function CreateAppointmentForm({
   const [professionals, setProfessionals] = useState<Professional[]>([]);
 
   useEffect(() => {
-    loadProcedures();
     if (isSuperAdmin) {
       loadProfessionals();
     }
   }, [isSuperAdmin]);
+
+  // Recarregar procedimentos quando o profissional mudar
+  useEffect(() => {
+    if (professionalId) {
+      loadProcedures(professionalId);
+    }
+  }, [professionalId]);
 
   useEffect(() => {
     if (patientId && procedureId && professionalId && appointmentDate && appointmentTime) {
@@ -761,18 +767,33 @@ function CreateAppointmentForm({
     }
   }, [patientId, procedureId, professionalId, appointmentDate, appointmentTime]);
 
-  async function loadProcedures() {
+  async function loadProcedures(profId: string) {
     try {
+      // Carregar procedimentos associados ao profissional
       const { data, error } = await supabase
-        .from('procedures')
-        .select('id, name, duration_minutes')
-        .eq('is_active', true)
-        .order('name');
+        .from('professional_procedures')
+        .select(`
+          procedure_id,
+          procedures:procedure_id (
+            id,
+            name,
+            duration_minutes
+          )
+        `)
+        .eq('professional_id', profId);
 
       if (error) throw error;
-      setProcedures(data || []);
+      
+      // Extrair os dados dos procedimentos da resposta
+      const proceduresList = data
+        ?.map((item: any) => item.procedures)
+        .filter((proc: any) => proc !== null) || [];
+      
+      setProcedures(proceduresList);
     } catch (error) {
       console.error('Error loading procedures:', error);
+      // Em caso de erro, não mostrar procedimentos
+      setProcedures([]);
     }
   }
 
@@ -867,48 +888,7 @@ function CreateAppointmentForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Patient Autocomplete */}
-      <div>
-        <label className="block text-sm font-medium text-text mb-2">
-          Paciente *
-        </label>
-        <PatientAutocomplete
-          value={patientId}
-          onChange={setPatientId}
-          professionalId={professionalId}
-          placeholder="Digite o nome do paciente..."
-        />
-      </div>
-
-      {/* Procedure Grid */}
-      <div>
-        <label className="block text-sm font-medium text-text mb-3">
-          Procedimento *
-        </label>
-        <div className="grid grid-cols-2 gap-3">
-          {procedures.map((procedure) => (
-            <button
-              key={procedure.id}
-              type="button"
-              onClick={() => setProcedureId(procedure.id)}
-              className={`p-4 rounded-xl border-2 transition-all text-left ${
-                procedureId === procedure.id
-                  ? 'border-primary bg-primary/10'
-                  : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
-              }`}
-            >
-              <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
-                {procedure.name}
-              </p>
-              <p className="text-xs text-text-muted">
-                {procedure.duration_minutes} min
-              </p>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Professional (Super Admin only) */}
+      {/* Professional (Super Admin only) - Primeiro para carregar procedimentos */}
       {isSuperAdmin && (
         <div>
           <label className="block text-sm font-medium text-text mb-2">
@@ -930,6 +910,60 @@ function CreateAppointmentForm({
           </select>
         </div>
       )}
+
+      {/* Patient Autocomplete */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">
+          Paciente *
+        </label>
+        <PatientAutocomplete
+          value={patientId}
+          onChange={setPatientId}
+          professionalId={professionalId}
+          placeholder="Digite o nome do paciente..."
+        />
+      </div>
+
+      {/* Procedure Grid */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-3">
+          Procedimento *
+        </label>
+        {!professionalId ? (
+          <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
+            {isSuperAdmin 
+              ? 'Selecione um profissional primeiro para ver os procedimentos disponíveis.'
+              : 'Carregando procedimentos...'}
+          </div>
+        ) : procedures.length === 0 ? (
+          <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-700 px-4 py-3 rounded-xl text-sm">
+            <p className="font-semibold mb-1">Nenhum procedimento associado</p>
+            <p className="text-xs">Este profissional ainda não tem procedimentos configurados. Entre em contato com o administrador.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {procedures.map((procedure) => (
+              <button
+                key={procedure.id}
+                type="button"
+                onClick={() => setProcedureId(procedure.id)}
+                className={`p-4 rounded-xl border-2 transition-all text-left ${
+                  procedureId === procedure.id
+                    ? 'border-primary bg-primary/10'
+                    : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                }`}
+              >
+                <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
+                  {procedure.name}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {procedure.duration_minutes} min
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Date and Time */}
       <div className="grid grid-cols-2 gap-3">

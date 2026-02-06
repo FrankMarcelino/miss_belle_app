@@ -63,7 +63,7 @@ Esta pasta contém a documentação de planejamento e evolução do MVP.
 
 ---
 
-### 6. [fix-appointments-join-ambiguity.md](./fix-appointments-join-ambiguity.md) 🆕
+### 6. [fix-appointments-join-ambiguity.md](./fix-appointments-join-ambiguity.md)
 **Fix crítico** - Agendamentos não apareciam na tela devido a ambiguidade de JOIN.
 
 **Conteúdo**:
@@ -71,6 +71,18 @@ Esta pasta contém a documentação de planejamento e evolução do MVP.
 - Solução: especificar FK explicitamente
 - Arquivos corrigidos (Agenda.tsx, Dashboard.tsx)
 - Documentação de sintaxe Supabase
+
+---
+
+### 7. [associacao-profissional-procedimento.md](./associacao-profissional-procedimento.md) 🆕
+**Feature nova** - Associar serviços a profissionais específicos.
+
+**Conteúdo**:
+- Relacionamento N:N entre profissionais e procedimentos
+- Migration com tabela de junction + RLS + função helper
+- Frontend filtra procedimentos por profissional
+- Seed com distribuição de especializações
+- Guia completo de teste e uso
 
 ---
 

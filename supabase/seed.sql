@@ -227,11 +227,76 @@ BEGIN
     AND a.status = 'completed'
   LIMIT 1;
   
+  -- ----------------------------------------------------------------------------
+  -- 3.5. PROFESSIONAL PROCEDURES (Associações Profissional-Procedimento)
+  -- ----------------------------------------------------------------------------
+  -- Associa procedimentos aos profissionais
+  -- O primeiro usuário pode fazer todos os procedimentos
+  
+  RAISE NOTICE 'Criando associações profissional-procedimento...';
+  
+  -- Associar TODOS os procedimentos ao primeiro usuário
+  INSERT INTO professional_procedures (professional_id, procedure_id)
+  SELECT 
+    first_user_id,
+    id
+  FROM procedures
+  WHERE is_active = true
+  ON CONFLICT (professional_id, procedure_id) DO NOTHING;
+  
+  -- Se houver outros usuários, distribuir procedimentos
+  -- Usuário 2: Especialista em Facial (Limpeza, Hidratação, Peeling, Acne)
+  INSERT INTO professional_procedures (professional_id, procedure_id)
+  SELECT 
+    p.id,
+    pr.id
+  FROM profiles p
+  CROSS JOIN procedures pr
+  WHERE p.id != first_user_id 
+    AND p.is_active = true
+    AND p.role = 'user'
+    AND pr.name IN ('Limpeza de Pele', 'Hidratação Facial', 'Peeling Químico', 'Tratamento para Acne')
+  LIMIT 16 -- Máximo 4 procedimentos por usuário
+  ON CONFLICT (professional_id, procedure_id) DO NOTHING;
+  
+  -- Usuário 3: Especialista em Corpo (Massagem, Drenagem)
+  INSERT INTO professional_procedures (professional_id, procedure_id)
+  SELECT 
+    p.id,
+    pr.id
+  FROM profiles p
+  CROSS JOIN procedures pr
+  WHERE p.id NOT IN (first_user_id, (SELECT MIN(id) FROM profiles WHERE id != first_user_id))
+    AND p.is_active = true
+    AND p.role = 'user'
+    AND pr.name IN ('Massagem Relaxante', 'Drenagem Linfática')
+  LIMIT 8 -- Máximo 2 procedimentos
+  ON CONFLICT (professional_id, procedure_id) DO NOTHING;
+  
+  -- Usuário 4+: Especialista em Estética Facial Rápida (Sobrancelha, Depilação)
+  INSERT INTO professional_procedures (professional_id, procedure_id)
+  SELECT 
+    p.id,
+    pr.id
+  FROM profiles p
+  CROSS JOIN procedures pr
+  WHERE p.id NOT IN (
+    first_user_id, 
+    (SELECT MIN(id) FROM profiles WHERE id != first_user_id),
+    (SELECT MIN(id) FROM profiles WHERE id != first_user_id AND id != (SELECT MIN(id) FROM profiles WHERE id != first_user_id))
+  )
+    AND p.is_active = true
+    AND p.role = 'user'
+    AND pr.name IN ('Design de Sobrancelhas', 'Depilação Facial')
+  LIMIT 10
+  ON CONFLICT (professional_id, procedure_id) DO NOTHING;
+
   RAISE NOTICE 'Seed concluído com sucesso!';
   RAISE NOTICE '- Procedures: 8 cadastrados';
   RAISE NOTICE '- Patients: 8 para o usuário %', first_user_id;
   RAISE NOTICE '- Appointments: ~10 (hoje, ontem, amanhã)';
   RAISE NOTICE '- Cash Closings: 2 (ontem finalizado, hoje em aberto)';
+  RAISE NOTICE '- Professional Procedures: Associações criadas';
   
 END $$;
 
@@ -252,6 +317,7 @@ END $$;
   - ~10 agendamentos (variados por data e status)
   - 2 fechamentos de caixa (1 finalizado, 1 em aberto)
   - Transações vinculadas e avulsas
+  - Associações profissional-procedimento (cada profissional tem seus serviços)
   
   Para criar dados para outros usuários:
   SELECT seed_patients_for_professional('UUID-DO-USUARIO-AQUI');
