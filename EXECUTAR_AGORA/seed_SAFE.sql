@@ -82,8 +82,12 @@ BEGIN
   -- 2º Closings (dependem de professional)
   DELETE FROM cash_register_closings WHERE professional_id = first_user_id;
   
-  -- 3º Appointments (dependem de patients, procedures, professional)
-  DELETE FROM appointments WHERE professional_id = first_user_id;
+  -- 3º Appointments - TODOS que referenciam pacientes deste profissional
+  -- (não apenas os appointments do próprio profissional!)
+  DELETE FROM appointments 
+  WHERE patient_id IN (
+    SELECT id FROM patients WHERE professional_id = first_user_id
+  );
   
   -- 4º Patients (agora pode deletar, sem appointments referenciando)
   DELETE FROM patients WHERE professional_id = first_user_id;
