@@ -1,3 +1,163 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============================================================================
+   Mobile-First Utilities
+   ============================================================================ */
+
+@layer utilities {
+  /* Touch Targets - Minimum 48x48px (Google Material, iOS HIG) */
+  .btn-touch {
+    @apply min-w-[48px] min-h-[48px] px-4 py-3;
+  }
+
+  .btn-touch-lg {
+    @apply min-w-[56px] min-h-[56px] px-5 py-4;
+  }
+
+  /* Mobile-optimized text sizes (min 16px to prevent iOS zoom) */
+  .text-mobile {
+    @apply text-base leading-relaxed; /* 16px */
+  }
+
+  .text-mobile-sm {
+    @apply text-sm leading-normal; /* 14px - use sparingly */
+  }
+
+  .text-mobile-lg {
+    @apply text-lg leading-relaxed; /* 18px */
+  }
+
+  /* Cards and spacing for comfortable touch */
+  .card-mobile {
+    @apply p-4 mb-3 rounded-xl;
+  }
+
+  .card-mobile-lg {
+    @apply p-5 mb-4 rounded-2xl;
+  }
+
+  /* Spacing between interactive elements */
+  .space-touch {
+    @apply space-y-3;
+  }
+
+  .gap-touch {
+    @apply gap-3;
+  }
+
+  /* Safe area for notches (iOS) */
+  .safe-top {
+    @apply pt-safe;
+  }
+
+  .safe-bottom {
+    @apply pb-safe;
+  }
+
+  /* Fixed bottom navigation area */
+  .bottom-nav-space {
+    @apply pb-20; /* Reserve space for bottom nav (64px + 16px padding) */
+  }
+
+  /* Scrollable with momentum (iOS smooth) */
+  .scroll-touch {
+    @apply overflow-y-auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@layer components {
+  /* Bottom Sheet backdrop */
+  .backdrop-sheet {
+    @apply fixed inset-0 bg-grafite-rosado/50 backdrop-blur-sm z-40;
+  }
+
+  /* Bottom Sheet container */
+  .sheet-container {
+    @apply fixed bottom-0 left-0 right-0 bg-background-card rounded-t-3xl shadow-2xl z-50;
+    @apply max-h-[90vh] overflow-hidden;
+  }
+
+  /* Bottom Sheet handle (drag indicator) */
+  .sheet-handle {
+    @apply w-10 h-1 bg-text-muted/30 rounded-full mx-auto my-3;
+  }
+
+  /* Bottom Navigation fixed bar */
+  .bottom-nav-bar {
+    @apply fixed bottom-0 left-0 right-0 bg-background-card border-t border-accent/20 z-30;
+    @apply flex items-center justify-around;
+    @apply h-16 px-2;
+    @apply safe-bottom;
+  }
+
+  /* Bottom Nav item */
+  .bottom-nav-item {
+    @apply flex flex-col items-center justify-center;
+    @apply min-w-[64px] min-h-[48px] px-2 py-1;
+    @apply rounded-lg transition-colors;
+    @apply text-text-muted hover:text-primary hover:bg-champagne-nuvem;
+  }
+
+  .bottom-nav-item-active {
+    @apply text-primary bg-champagne-nuvem;
+  }
+
+  /* Autocomplete dropdown */
+  .autocomplete-list {
+    @apply absolute top-full left-0 right-0 mt-1;
+    @apply bg-background-card border border-accent/30 rounded-lg shadow-lg;
+    @apply max-h-64 overflow-y-auto scroll-touch;
+    @apply z-50;
+  }
+
+  .autocomplete-item {
+    @apply px-4 py-3 cursor-pointer;
+    @apply border-b border-accent/10 last:border-b-0;
+    @apply hover:bg-champagne-nuvem transition-colors;
+    @apply min-h-[56px] flex items-center;
+  }
+
+  .autocomplete-item-active {
+    @apply bg-champagne-nuvem;
+  }
+
+  /* Swipeable card */
+  .swipe-card {
+    @apply relative overflow-hidden;
+    @apply touch-pan-y; /* Allow vertical scroll while swiping horizontally */
+  }
+
+  /* Loading skeleton for mobile */
+  .skeleton-mobile {
+    @apply animate-pulse bg-champagne-nuvem rounded-lg;
+  }
+}
+
+/* ============================================================================
+   Mobile-specific overrides
+   ============================================================================ */
+@media (max-width: 767px) {
+  /* Hide scrollbar on mobile for cleaner UI */
+  .scroll-hidden::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .scroll-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Full-width forms on mobile */
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="time"],
+  select,
+  textarea {
+    @apply text-base; /* Prevent zoom on iOS */
+  }
+}

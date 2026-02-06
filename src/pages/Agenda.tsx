@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, X, Clock } from 'lucide-react';
+import BottomSheet from '../components/mobile/BottomSheet';
+import PatientAutocomplete from '../components/mobile/PatientAutocomplete';
+import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, X, Clock, Search } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -44,6 +46,10 @@ export default function Agenda() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedProfessional, setSelectedProfessional] = useState<string>('');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
+  
+  // Search and filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     if (isSuperAdmin) {
