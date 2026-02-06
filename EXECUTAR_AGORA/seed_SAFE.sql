@@ -64,8 +64,10 @@ BEGIN
     default_price = EXCLUDED.default_price,
     is_active = EXCLUDED.is_active;
 
-  -- Guardar IDs dos procedimentos
-  SELECT ARRAY_AGG(id) INTO procedure_ids FROM procedures WHERE is_active = true;
+  -- Guardar IDs dos procedimentos (ordem fixa para usar nos appointments)
+  SELECT ARRAY_AGG(id ORDER BY created_at) INTO procedure_ids 
+  FROM procedures 
+  WHERE is_active = true;
 
   -- ----------------------------------------------------------------------------
   -- 2. LIMPAR DADOS ANTIGOS (ORDEM CORRETA!)
@@ -108,8 +110,13 @@ BEGIN
     ('Elaine Santos', '(11) 94321-0987', 'elaine.santos@email.com', 'Agendamentos apenas após 14h', first_user_id, NOW()),
     ('Fernanda Lima', '(11) 93210-9876', 'fer.lima@email.com', NULL, first_user_id, NOW()),
     ('Gabriela Rocha', '(11) 92109-8765', 'gabi.rocha@email.com', 'Cliente desde 2023', first_user_id, NOW()),
-    ('Helena Martins', '(11) 91098-7654', 'helena.martins@email.com', NULL, first_user_id, NOW())
-  RETURNING ARRAY_AGG(id) INTO patient_ids;
+    ('Helena Martins', '(11) 91098-7654', 'helena.martins@email.com', NULL, first_user_id, NOW());
+  
+  -- Buscar IDs dos pacientes recém-criados
+  SELECT ARRAY_AGG(id ORDER BY created_at DESC) INTO patient_ids
+  FROM patients 
+  WHERE professional_id = first_user_id
+  LIMIT 8;
 
   -- ----------------------------------------------------------------------------
   -- 4. APPOINTMENTS (INSERT)
