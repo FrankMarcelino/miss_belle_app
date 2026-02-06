@@ -89,7 +89,7 @@ BEGIN
   
   -- Inserir em auth.identities
   INSERT INTO auth.identities (
-    id,
+    provider_id,
     user_id,
     identity_data,
     provider,
@@ -97,7 +97,7 @@ BEGIN
     created_at,
     updated_at
   ) VALUES (
-    gen_random_uuid(),
+    new_user_id::text,
     new_user_id,
     jsonb_build_object('sub', new_user_id::text, 'email', user_email),
     'email',
