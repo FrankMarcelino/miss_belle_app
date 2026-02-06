@@ -6,6 +6,18 @@ Esta pasta contém scripts para criar os **3 profissionais reais** da clínica c
 
 ---
 
+## 🧹 PRIMEIRO: Limpar dados de teste (OPCIONAL)
+
+Se você já executou o `seed_SAFE.sql` antes e quer começar do zero:
+
+```sql
+📁 00_limpar_dados_teste.sql
+```
+
+Este script remove todos os dados de teste (agendamentos, pacientes, procedimentos, etc.) mas mantém os usuários.
+
+---
+
 ## ⚡ OPÇÃO RÁPIDA: Fazer tudo de uma vez
 
 Se você **já criou os 3 usuários** no Supabase Auth, execute:

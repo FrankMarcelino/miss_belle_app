@@ -53,6 +53,30 @@ END $$;
 -- PARTE 2: LIMPAR DADOS DE TESTE ANTIGOS
 -- ============================================================================
 
+-- Deletar appointments primeiro (foreign key constraint)
+DO $$
+DECLARE
+  deleted_count integer;
+BEGIN
+  DELETE FROM appointments 
+  WHERE procedure_id IN (
+    'a1111111-1111-1111-1111-111111111111',
+    'a2222222-2222-2222-2222-222222222222',
+    'a3333333-3333-3333-3333-333333333333',
+    'a4444444-4444-4444-4444-444444444444',
+    'a5555555-5555-5555-5555-555555555555',
+    'a6666666-6666-6666-6666-666666666666',
+    'a7777777-7777-7777-7777-777777777777',
+    'a8888888-8888-8888-8888-888888888888'
+  );
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  
+  IF deleted_count > 0 THEN
+    RAISE NOTICE '✅ % agendamentos de teste removidos', deleted_count;
+  END IF;
+END $$;
+
+-- Agora deletar procedimentos de teste
 DELETE FROM procedures WHERE id IN (
   'a1111111-1111-1111-1111-111111111111',
   'a2222222-2222-2222-2222-222222222222',
