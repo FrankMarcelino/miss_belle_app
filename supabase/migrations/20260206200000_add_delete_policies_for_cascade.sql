@@ -19,14 +19,17 @@
 -- PATIENTS: Adicionar policies de DELETE
 -- ============================================================================
 
+DROP POLICY IF EXISTS "Users can delete own patients" ON patients;
+DROP POLICY IF EXISTS "Super admins can delete any patient" ON patients;
+
 -- Policy: Users podem deletar seus próprios pacientes
-CREATE POLICY IF NOT EXISTS "Users can delete own patients"
+CREATE POLICY "Users can delete own patients"
   ON patients FOR DELETE
   TO authenticated
   USING (professional_id = auth.uid());
 
 -- Policy: Super admins podem deletar qualquer paciente
-CREATE POLICY IF NOT EXISTS "Super admins can delete any patient"
+CREATE POLICY "Super admins can delete any patient"
   ON patients FOR DELETE
   TO authenticated
   USING (
