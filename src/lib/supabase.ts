@@ -8,6 +8,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export { supabaseUrl }; // ✨ Exportar URL para usar em Edge Functions
 
 export type Database = {
   public: {

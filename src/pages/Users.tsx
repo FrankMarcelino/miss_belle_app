@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseUrl } from '../lib/supabase';
 import { Plus, Edit2, Loader2, Search, Power, Trash2, Settings, Calendar, Scissors, Users as UsersIcon, Key } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
@@ -929,39 +929,39 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
     setLoading(true);
 
     try {
-      // ⚠️ Admin API não funciona no frontend (requer service_role key)
-      // Usar signUp regular + criar profile manualmente com role definido
+      // ✨ Chamar Edge Function que usa Admin API no backend
+      const { data: { session } } = await supabase.auth.getSession();
       
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
+      if (!session) {
+        throw new Error('Sessão não encontrada');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          email,
+          password,
+          full_name: fullName,
+          role,
+        }),
       });
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('Falha ao criar usuário');
+      const result = await response.json();
 
-      // Criar profile com role definido pelo super admin
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          email,
-          full_name: fullName,
-          role, // Super admin define o role
-          is_active: true,
-        });
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao criar usuário');
+      }
 
-      if (profileError) throw profileError;
+      const newUserId = result.user.id;
 
       // ✨ Associar procedimentos selecionados
       if (selectedProcedures.length > 0) {
         const associations = selectedProcedures.map((procId) => ({
-          professional_id: authData.user.id,
+          professional_id: newUserId,
           procedure_id: procId,
         }));
 
@@ -979,7 +979,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
       showToast({
         type: 'success',
         message: 'Usuário criado com sucesso!',
-        description: `${fullName} foi adicionado. ${authData.user.identities && authData.user.identities.length === 0 ? 'Precisará confirmar o email.' : ''}`,
+        description: `${fullName} foi adicionado ao sistema${selectedProcedures.length > 0 ? ` com ${selectedProcedures.length} procedimento(s)` : ''}.`,
       });
 
       onSuccess();
