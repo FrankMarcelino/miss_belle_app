@@ -929,33 +929,36 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
     setLoading(true);
 
     try {
-      // ✨ NOVO: Usar Admin API em vez de signUp
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      // ⚠️ Admin API não funciona no frontend (requer service_role key)
+      // Usar signUp regular + criar profile manualmente com role definido
+      
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
-        email_confirm: true, // Já confirmar email automaticamente
-        user_metadata: {
-          full_name: fullName,
+        options: {
+          data: {
+            full_name: fullName,
+          },
         },
       });
 
       if (authError) throw authError;
       if (!authData.user) throw new Error('Falha ao criar usuário');
 
-      // Criar profile
+      // Criar profile com role definido pelo super admin
       const { error: profileError } = await supabase
         .from('profiles')
         .insert({
           id: authData.user.id,
           email,
           full_name: fullName,
-          role,
+          role, // Super admin define o role
           is_active: true,
         });
 
       if (profileError) throw profileError;
 
-      // ✨ NOVO: Associar procedimentos selecionados
+      // ✨ Associar procedimentos selecionados
       if (selectedProcedures.length > 0) {
         const associations = selectedProcedures.map((procId) => ({
           professional_id: authData.user.id,
@@ -976,7 +979,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
       showToast({
         type: 'success',
         message: 'Usuário criado com sucesso!',
-        description: `${fullName} foi adicionado ao sistema${selectedProcedures.length > 0 ? ` com ${selectedProcedures.length} procedimento(s)` : ''}.`,
+        description: `${fullName} foi adicionado. ${authData.user.identities && authData.user.identities.length === 0 ? 'Precisará confirmar o email.' : ''}`,
       });
 
       onSuccess();
