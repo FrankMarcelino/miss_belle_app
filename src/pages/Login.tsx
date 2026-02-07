@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useRouter } from '../contexts/RouterContext';
 import { Heart } from 'lucide-react';
 
 export default function Login() {
@@ -9,7 +10,16 @@ export default function Login() {
   const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, profile, user } = useAuth();
+  const { navigate, getDefaultRoute } = useRouter();
+
+  // ✨ Redirecionar automaticamente quando usuário fizer login e perfil carregar
+  useEffect(() => {
+    if (user && profile) {
+      const defaultRoute = getDefaultRoute(profile.role === 'super_admin');
+      navigate(defaultRoute);
+    }
+  }, [user, profile, navigate, getDefaultRoute]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,12 +38,14 @@ export default function Login() {
       if (error) {
         setError(error.message || 'Erro ao criar conta. Tente novamente.');
       }
+      // Não precisa navegar aqui, o useEffect vai fazer isso
     } else {
       const { error } = await signIn(email, password);
 
       if (error) {
         setError('Credenciais inválidas. Verifique seu e-mail e senha.');
       }
+      // Não precisa navegar aqui, o useEffect vai fazer isso
     }
 
     setLoading(false);

@@ -5,6 +5,7 @@ type Route = string;
 interface RouterContextType {
   currentRoute: Route;
   navigate: (route: Route) => void;
+  getDefaultRoute: (isSuperAdmin: boolean) => Route;
 }
 
 const RouterContext = createContext<RouterContextType | undefined>(undefined);
@@ -16,8 +17,18 @@ export function RouterProvider({ children }: { children: ReactNode }) {
     setCurrentRoute(route);
   };
 
+  // ✨ NOVO: Função para obter rota padrão baseada no perfil
+  const getDefaultRoute = (isSuperAdmin: boolean): Route => {
+    // Super admin vai para dashboard (visão geral)
+    if (isSuperAdmin) {
+      return '/dashboard';
+    }
+    // Profissional vai direto para sua agenda
+    return '/minha-agenda';
+  };
+
   return (
-    <RouterContext.Provider value={{ currentRoute, navigate }}>
+    <RouterContext.Provider value={{ currentRoute, navigate, getDefaultRoute }}>
       {children}
     </RouterContext.Provider>
   );
