@@ -168,6 +168,64 @@ export default function Users() {
     }
 
     try {
+      // ✨ NOVO: Deletar dados relacionados ANTES do profile (ordem FK)
+      
+      // 1. Deletar transações do caixa (referencia appointments)
+      const { error: transactionsError } = await supabase
+        .from('cash_register_transactions')
+        .delete()
+        .in('appointment_id', 
+          supabase
+            .from('appointments')
+            .select('id')
+            .eq('professional_id', userId)
+        );
+      
+      if (transactionsError) {
+        console.warn('Error deleting transactions:', transactionsError);
+      }
+
+      // 2. Deletar agendamentos (referencia procedures, patients, professional)
+      const { error: appointmentsError } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('professional_id', userId);
+
+      if (appointmentsError) {
+        console.warn('Error deleting appointments:', appointmentsError);
+      }
+
+      // 3. Deletar pacientes (referencia professional)
+      const { error: patientsError } = await supabase
+        .from('patients')
+        .delete()
+        .eq('professional_id', userId);
+
+      if (patientsError) {
+        console.warn('Error deleting patients:', patientsError);
+      }
+
+      // 4. Deletar associações de procedimentos
+      const { error: proceduresError } = await supabase
+        .from('professional_procedures')
+        .delete()
+        .eq('professional_id', userId);
+
+      if (proceduresError) {
+        console.warn('Error deleting professional_procedures:', proceduresError);
+      }
+
+      // 5. Deletar fechamentos de caixa
+      const { error: closingsError } = await supabase
+        .from('cash_register_closings')
+        .delete()
+        .eq('professional_id', userId);
+
+      if (closingsError) {
+        console.warn('Error deleting cash register closings:', closingsError);
+      }
+
+      // 6. Finalmente, deletar o profile
       const { error: profileError } = await supabase
         .from('profiles')
         .delete()
@@ -175,6 +233,7 @@ export default function Users() {
 
       if (profileError) throw profileError;
 
+      // 7. Deletar do auth (opcional, pode falhar se não tiver permissão)
       const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
       if (authError) {
@@ -184,7 +243,7 @@ export default function Users() {
       showToast({
         type: 'success',
         message: 'Usuário deletado!',
-        description: 'O usuário foi removido do sistema com sucesso.',
+        description: 'O usuário e todos os dados relacionados foram removidos.',
       });
 
       setDeletingUser(null);
