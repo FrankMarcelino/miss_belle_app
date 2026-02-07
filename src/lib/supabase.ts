@@ -116,6 +116,10 @@ export type Database = {
           appointment_time: string;
           status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
           cancellation_reason: string | null;
+          downpayment_amount: number;
+          downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+          downpayment_notes: string | null;
+          has_payment: boolean;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -129,6 +133,10 @@ export type Database = {
           appointment_time: string;
           status?: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
           cancellation_reason?: string | null;
+          downpayment_amount?: number;
+          downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+          downpayment_notes?: string | null;
+          has_payment?: boolean;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -142,6 +150,10 @@ export type Database = {
           appointment_time?: string;
           status?: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
           cancellation_reason?: string | null;
+          downpayment_amount?: number;
+          downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+          downpayment_notes?: string | null;
+          has_payment?: boolean;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -189,6 +201,7 @@ export type Database = {
           appointment_id: string | null;
           amount: number;
           payment_method: string;
+          transaction_type: 'downpayment' | 'remaining_payment' | 'full_payment';
           notes: string | null;
           created_at: string;
         };
@@ -198,6 +211,7 @@ export type Database = {
           appointment_id?: string | null;
           amount: number;
           payment_method: string;
+          transaction_type?: 'downpayment' | 'remaining_payment' | 'full_payment';
           notes?: string | null;
           created_at?: string;
         };
@@ -207,6 +221,7 @@ export type Database = {
           appointment_id?: string | null;
           amount?: number;
           payment_method?: string;
+          transaction_type?: 'downpayment' | 'remaining_payment' | 'full_payment';
           notes?: string | null;
           created_at?: string;
         };
@@ -214,3 +229,33 @@ export type Database = {
     };
   };
 };
+
+// ============================================================================
+// INTERFACES AUXILIARES PARA PAGAMENTO
+// ============================================================================
+
+export type PaymentMethod = 'dinheiro' | 'credito' | 'debito' | 'pix';
+
+export interface PaymentSplit {
+  method: PaymentMethod;
+  amount: number;
+}
+
+export interface AppointmentWithPayment {
+  id: string;
+  patient_id: string;
+  procedure_id: string;
+  professional_id: string;
+  appointment_date: string;
+  appointment_time: string;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  cancellation_reason: string | null;
+  downpayment_amount: number;
+  downpayment_method: PaymentMethod | null;
+  downpayment_notes: string | null;
+  has_payment: boolean;
+  patient?: { full_name: string };
+  procedure?: { name: string; duration_minutes: number; default_price: number };
+  professional?: { full_name: string };
+}
+

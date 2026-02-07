@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BottomSheet from '../components/mobile/BottomSheet';
 import PatientAutocomplete from '../components/mobile/PatientAutocomplete';
+import PaymentModal from '../components/PaymentModal';
 import { useToast } from '../components/Toast';
 import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
 import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Clock, Search } from 'lucide-react';
@@ -16,8 +17,12 @@ interface Appointment {
   appointment_time: string;
   status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
   cancellation_reason: string | null;
+  downpayment_amount?: number;
+  downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+  downpayment_notes?: string | null;
+  has_payment?: boolean;
   patient?: { full_name: string };
-  procedure?: { name: string; duration_minutes: number };
+  procedure?: { name: string; duration_minutes: number; default_price?: number };
   professional?: { full_name: string };
 }
 
@@ -25,6 +30,7 @@ interface Procedure {
   id: string;
   name: string;
   duration_minutes: number;
+  default_price: number;
 }
 
 interface Professional {
@@ -573,10 +579,17 @@ function AppointmentDetailsContent({
   const [updating, setUpdating] = useState(false);
   const [showCancelReason, setShowCancelReason] = useState(false);
   const [cancellationReason, setCancellationReason] = useState('');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
     if (newStatus === 'cancelled' && !showCancelReason) {
       setShowCancelReason(true);
+      return;
+    }
+
+    // Se for concluir, abrir modal de pagamento ao invés de atualizar diretamente
+    if (newStatus === 'completed') {
+      setShowPaymentModal(true);
       return;
     }
 
@@ -601,6 +614,11 @@ function AppointmentDetailsContent({
     } finally {
       setUpdating(false);
     }
+  }
+
+  function handlePaymentSuccess() {
+    onRefresh();
+    onClose();
   }
 
   return (
@@ -638,6 +656,27 @@ function AppointmentDetailsContent({
             <div>
               <label className="text-sm text-text-muted">Profissional</label>
               <p className="text-text font-medium">{appointment.professional.full_name}</p>
+            </div>
+          )}
+
+          {appointment.downpayment_amount && appointment.downpayment_amount > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <label className="text-sm text-green-800 font-medium">💰 Calção Pago</label>
+              <p className="text-green-700 font-bold text-lg mt-1">
+                R$ {appointment.downpayment_amount.toFixed(2)}
+              </p>
+              {appointment.downpayment_method && (
+                <p className="text-xs text-green-600 mt-1">
+                  Forma: {appointment.downpayment_method === 'dinheiro' ? 'Dinheiro' :
+                           appointment.downpayment_method === 'credito' ? 'Cartão de Crédito' :
+                           appointment.downpayment_method === 'debito' ? 'Cartão de Débito' : 'PIX'}
+                </p>
+              )}
+              {appointment.downpayment_notes && (
+                <p className="text-xs text-green-600 mt-1">
+                  Obs: {appointment.downpayment_notes}
+                </p>
+              )}
             </div>
           )}
 
@@ -716,6 +755,21 @@ function AppointmentDetailsContent({
             </div>
           )}
         </div>
+
+        {/* Payment Modal */}
+        {showPaymentModal && (
+          <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => setShowPaymentModal(false)}
+            appointmentId={appointment.id}
+            patientName={appointment.patient?.full_name || ''}
+            procedureName={appointment.procedure?.name || ''}
+            totalAmount={appointment.procedure?.default_price || 0}
+            downpaymentAmount={appointment.downpayment_amount}
+            downpaymentMethod={appointment.downpayment_method}
+            onSuccess={handlePaymentSuccess}
+          />
+        )}
     </div>
   );
 }
@@ -745,6 +799,13 @@ function CreateAppointmentForm({
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
 
+  // Estados para calção
+  const [hasDownpayment, setHasDownpayment] = useState(false);
+  const [downpaymentAmount, setDownpaymentAmount] = useState(0);
+  const [downpaymentMethod, setDownpaymentMethod] = useState<'dinheiro' | 'credito' | 'debito' | 'pix'>('dinheiro');
+  const [downpaymentNotes, setDownpaymentNotes] = useState('');
+  const [selectedProcedurePrice, setSelectedProcedurePrice] = useState(0);
+
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
 
@@ -760,6 +821,16 @@ function CreateAppointmentForm({
       loadProcedures(professionalId);
     }
   }, [professionalId]);
+
+  // Atualizar preço quando procedimento for selecionado
+  useEffect(() => {
+    if (procedureId) {
+      const selected = procedures.find(p => p.id === procedureId);
+      if (selected) {
+        setSelectedProcedurePrice(selected.default_price);
+      }
+    }
+  }, [procedureId, procedures]);
 
   useEffect(() => {
     if (patientId && procedureId && professionalId && appointmentDate && appointmentTime) {
@@ -777,7 +848,8 @@ function CreateAppointmentForm({
           procedures:procedure_id (
             id,
             name,
-            duration_minutes
+            duration_minutes,
+            default_price
           )
         `)
         .eq('professional_id', profId);
@@ -861,20 +933,91 @@ function CreateAppointmentForm({
     setLoading(true);
 
     try {
-      const { error: insertError } = await supabase.from('appointments').insert({
+      // Validar calção se foi informado
+      if (hasDownpayment) {
+        if (downpaymentAmount <= 0) {
+          showToast('error', 'Calção inválido', 'O valor do calção deve ser maior que zero.');
+          setLoading(false);
+          return;
+        }
+        if (downpaymentAmount >= selectedProcedurePrice) {
+          showToast('error', 'Calção inválido', 'O calção deve ser menor que o valor total do serviço.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const { data: newAppointment, error: insertError } = await supabase.from('appointments').insert({
         patient_id: patientId,
         procedure_id: procedureId,
         professional_id: professionalId,
         appointment_date: appointmentDate,
         appointment_time: appointmentTime,
         status: 'scheduled',
+        downpayment_amount: hasDownpayment ? downpaymentAmount : 0,
+        downpayment_method: hasDownpayment ? downpaymentMethod : null,
+        downpayment_notes: hasDownpayment ? downpaymentNotes : null,
+        has_payment: hasDownpayment,
         created_by: user?.id,
-      });
+      }).select().single();
 
       if (insertError) throw insertError;
 
+      // Se houver calção, criar transação no caixa
+      if (hasDownpayment && newAppointment) {
+        // Buscar ou criar fechamento do dia
+        const today = new Date().toISOString().split('T')[0];
+        let { data: closing } = await supabase
+          .from('cash_register_closings')
+          .select('id')
+          .eq('professional_id', professionalId)
+          .eq('closing_date', today)
+          .eq('is_finalized', false)
+          .single();
+
+        if (!closing) {
+          const { data: newClosing, error: closingError } = await supabase
+            .from('cash_register_closings')
+            .insert({
+              professional_id: professionalId,
+              closing_date: today,
+              total_amount: 0,
+              is_finalized: false,
+            })
+            .select('id')
+            .single();
+
+          if (closingError) throw closingError;
+          closing = newClosing;
+        }
+
+        if (closing) {
+          const { error: transactionError } = await supabase
+            .from('cash_register_transactions')
+            .insert({
+              closing_id: closing.id,
+              appointment_id: newAppointment.id,
+              amount: downpaymentAmount,
+              payment_method: downpaymentMethod === 'dinheiro' ? 'Dinheiro' : 
+                              downpaymentMethod === 'credito' ? 'Cartão de Crédito' :
+                              downpaymentMethod === 'debito' ? 'Cartão de Débito' : 'PIX',
+              transaction_type: 'downpayment',
+              notes: downpaymentNotes || 'Calção de agendamento',
+            });
+
+          if (transactionError) {
+            console.error('Error creating downpayment transaction:', transactionError);
+            // Não bloquear o agendamento se a transação falhar
+          }
+        }
+      }
+
       // Success toast
-      showToast('success', 'Agendamento criado!', 'O agendamento foi salvo com sucesso.');
+      showToast('success', 'Agendamento criado!', 
+        hasDownpayment 
+          ? `O agendamento foi salvo e o calção de R$ ${downpaymentAmount.toFixed(2)} foi registrado.`
+          : 'O agendamento foi salvo com sucesso.'
+      );
       onSuccess();
     } catch (error) {
       // Parse and display user-friendly error
@@ -1000,6 +1143,93 @@ function CreateAppointmentForm({
             <p className="font-semibold mb-1">Conflito de horário!</p>
             <p className="text-xs">Já existe um agendamento para este profissional neste horário.</p>
           </div>
+        </div>
+      )}
+
+      {/* Calção (Opcional) */}
+      {selectedProcedurePrice > 0 && (
+        <div className="border-t border-accent/20 pt-4 mt-2">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={hasDownpayment}
+              onChange={(e) => setHasDownpayment(e.target.checked)}
+              className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/30 rounded focus:ring-2 focus:ring-primary"
+              disabled={loading}
+            />
+            <span className="text-sm font-medium text-text">
+              Cliente pagou calção (entrada)
+            </span>
+          </label>
+
+          {hasDownpayment && (
+            <div className="mt-4 space-y-3 bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-sm text-green-800 font-medium">
+                💰 Valor total do serviço: R$ {selectedProcedurePrice.toFixed(2)}
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-text mb-2">
+                  Valor do calção *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">
+                    R$
+                  </span>
+                  <input
+                    type="number"
+                    value={downpaymentAmount || ''}
+                    onChange={(e) => setDownpaymentAmount(Number(e.target.value))}
+                    className="w-full pl-10 pr-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                    placeholder="0,00"
+                    step="0.01"
+                    min="0"
+                    max={selectedProcedurePrice}
+                    required={hasDownpayment}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text mb-2">
+                  Forma de pagamento *
+                </label>
+                <select
+                  value={downpaymentMethod}
+                  onChange={(e) => setDownpaymentMethod(e.target.value as 'dinheiro' | 'credito' | 'debito' | 'pix')}
+                  className="w-full px-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                  required={hasDownpayment}
+                  disabled={loading}
+                >
+                  <option value="dinheiro">Dinheiro</option>
+                  <option value="credito">Cartão de Crédito</option>
+                  <option value="debito">Cartão de Débito</option>
+                  <option value="pix">PIX</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-text mb-2">
+                  Observações (opcional)
+                </label>
+                <textarea
+                  value={downpaymentNotes}
+                  onChange={(e) => setDownpaymentNotes(e.target.value)}
+                  className="w-full px-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text resize-none"
+                  rows={2}
+                  placeholder="Ex: Cliente pagou R$ 20 de entrada..."
+                  disabled={loading}
+                />
+              </div>
+
+              {downpaymentAmount > 0 && (
+                <p className="text-sm text-green-700">
+                  Restante a pagar: R$ {(selectedProcedurePrice - downpaymentAmount).toFixed(2)}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

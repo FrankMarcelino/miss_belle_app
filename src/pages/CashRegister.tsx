@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2 } from 'lucide-react';
+import PaymentModal from '../components/PaymentModal';
+import { Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2, Clock, User } from 'lucide-react';
 
 interface CashRegisterClosing {
   id: string;
@@ -34,6 +35,15 @@ interface Professional {
   full_name: string;
 }
 
+interface PendingAppointment {
+  id: string;
+  appointment_time: string;
+  downpayment_amount: number;
+  downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+  patient: { full_name: string };
+  procedure: { name: string; default_price: number };
+}
+
 export default function CashRegister() {
   const { user, isSuperAdmin } = useAuth();
   const [closings, setClosings] = useState<CashRegisterClosing[]>([]);
@@ -43,12 +53,19 @@ export default function CashRegister() {
   const [selectedProfessional, setSelectedProfessional] = useState<string>('');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
   const [dateFilter, setDateFilter] = useState<string>('');
+  
+  // Estados para atendimentos pendentes
+  const [pendingAppointments, setPendingAppointments] = useState<PendingAppointment[]>([]);
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<PendingAppointment | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     if (isSuperAdmin) {
       loadProfessionals();
     }
     loadClosings();
+    loadPendingAppointments();
   }, [user, isSuperAdmin, selectedProfessional, dateFilter]);
 
   async function loadProfessionals() {
@@ -95,6 +112,42 @@ export default function CashRegister() {
     }
   }
 
+  async function loadPendingAppointments() {
+    try {
+      setLoadingPending(true);
+      const today = new Date().toISOString().split('T')[0];
+
+      let query = supabase
+        .from('appointments')
+        .select(`
+          id,
+          appointment_time,
+          downpayment_amount,
+          downpayment_method,
+          patient:patients(full_name),
+          procedure:procedures(name, default_price)
+        `)
+        .eq('appointment_date', today)
+        .in('status', ['scheduled', 'confirmed'])
+        .order('appointment_time');
+
+      if (!isSuperAdmin && user) {
+        query = query.eq('professional_id', user.id);
+      } else if (selectedProfessional) {
+        query = query.eq('professional_id', selectedProfessional);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setPendingAppointments(data || []);
+    } catch (error) {
+      console.error('Error loading pending appointments:', error);
+    } finally {
+      setLoadingPending(false);
+    }
+  }
+
   async function createClosing() {
     const today = new Date().toISOString().split('T')[0];
 
@@ -136,6 +189,18 @@ export default function CashRegister() {
   function openClosing(closing: CashRegisterClosing) {
     setSelectedClosing(closing);
     setShowTransactions(true);
+  }
+
+  function handleClosePayment(appointment: PendingAppointment) {
+    setSelectedAppointment(appointment);
+    setShowPaymentModal(true);
+  }
+
+  function handlePaymentSuccess() {
+    setShowPaymentModal(false);
+    setSelectedAppointment(null);
+    loadPendingAppointments();
+    loadClosings();
   }
 
   if (loading) {
@@ -221,6 +286,65 @@ export default function CashRegister() {
           </div>
         </div>
 
+        {/* Seção de Atendimentos Pendentes */}
+        {pendingAppointments.length > 0 && (
+          <div className="border-b border-accent/20 p-6">
+            <h2 className="text-lg font-semibold text-text mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              Atendimentos Pendentes de Pagamento
+            </h2>
+            {loadingPending ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingAppointments.map((appointment) => (
+                  <div
+                    key={appointment.id}
+                    className="bg-champagne-nuvem rounded-lg p-4 border border-accent/20 hover:shadow-soft transition-all"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="font-semibold text-text">
+                            {appointment.appointment_time.substring(0, 5)}
+                          </span>
+                          <span className="text-text flex items-center gap-1">
+                            <User className="w-4 h-4" />
+                            {appointment.patient?.full_name}
+                          </span>
+                        </div>
+                        <p className="text-sm text-text-muted mb-2">
+                          {appointment.procedure?.name} - R$ {appointment.procedure?.default_price.toFixed(2)}
+                        </p>
+                        {appointment.downpayment_amount > 0 && (
+                          <div className="bg-green-50 border border-green-200 rounded px-2 py-1 inline-block">
+                            <p className="text-xs text-green-700 font-medium">
+                              Calção: R$ {appointment.downpayment_amount.toFixed(2)} ({
+                                appointment.downpayment_method === 'dinheiro' ? 'Dinheiro' :
+                                appointment.downpayment_method === 'credito' ? 'Crédito' :
+                                appointment.downpayment_method === 'debito' ? 'Débito' : 'PIX'
+                              })
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleClosePayment(appointment)}
+                        className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-soft flex items-center gap-2 whitespace-nowrap"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                        Fechar Caixa
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {closings.length === 0 ? (
           <div className="p-12 text-center">
             <DollarSign className="w-12 h-12 text-text-muted mx-auto mb-4" />
@@ -294,6 +418,20 @@ export default function CashRegister() {
             loadClosings();
           }}
           onUpdate={loadClosings}
+        />
+      )}
+
+      {showPaymentModal && selectedAppointment && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          appointmentId={selectedAppointment.id}
+          patientName={selectedAppointment.patient?.full_name || ''}
+          procedureName={selectedAppointment.procedure?.name || ''}
+          totalAmount={selectedAppointment.procedure?.default_price || 0}
+          downpaymentAmount={selectedAppointment.downpayment_amount}
+          downpaymentMethod={selectedAppointment.downpayment_method}
+          onSuccess={handlePaymentSuccess}
         />
       )}
     </div>
