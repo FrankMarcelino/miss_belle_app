@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Loader2, Search, Power, Trash2 } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Power, Trash2, Settings } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../components/Toast';
+import Toast from '../components/Toast';
+import { parseSupabaseError } from '../lib/errorHandling';
 
 interface Profile {
   id: string;
@@ -12,6 +16,8 @@ interface Profile {
 }
 
 export default function Users() {
+  const { isSuperAdmin, loading: authLoading, user: currentUser } = useAuth();
+  const { toast, showToast, hideToast } = useToast();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,9 +25,15 @@ export default function Users() {
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [deletingUser, setDeletingUser] = useState<Profile | null>(null);
 
+  // 🔒 SEGURANÇA: Verificar permissões
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (!authLoading && !isSuperAdmin) {
+      // Não é super admin, não carregar usuários
+      setLoading(false);
+    } else if (!authLoading && isSuperAdmin) {
+      loadUsers();
+    }
+  }, [isSuperAdmin, authLoading]);
 
   async function loadUsers() {
     try {
@@ -34,6 +46,11 @@ export default function Users() {
       setUsers(data || []);
     } catch (error) {
       console.error('Error loading users:', error);
+      showToast({
+        type: 'error',
+        message: 'Erro ao carregar usuários',
+        description: parseSupabaseError(error).message,
+      });
     } finally {
       setLoading(false);
     }
@@ -47,14 +64,36 @@ export default function Users() {
         .eq('id', userId);
 
       if (error) throw error;
+      
+      showToast({
+        type: 'success',
+        message: 'Status alterado!',
+        description: `Usuário ${!currentStatus ? 'ativado' : 'desativado'} com sucesso.`,
+      });
+      
       loadUsers();
     } catch (error) {
       console.error('Error toggling user status:', error);
-      alert('Erro ao alterar status do usuário');
+      showToast({
+        type: 'error',
+        message: 'Erro ao alterar status',
+        description: parseSupabaseError(error).message,
+      });
     }
   }
 
   async function handleDeleteUser(userId: string) {
+    // 🔒 VALIDAÇÃO: Não pode deletar a si mesmo
+    if (currentUser?.id === userId) {
+      showToast({
+        type: 'error',
+        message: 'Operação não permitida',
+        description: 'Você não pode deletar sua própria conta.',
+      });
+      setDeletingUser(null);
+      return;
+    }
+
     try {
       const { error: profileError } = await supabase
         .from('profiles')
@@ -69,11 +108,21 @@ export default function Users() {
         console.warn('Could not delete auth user:', authError);
       }
 
+      showToast({
+        type: 'success',
+        message: 'Usuário deletado!',
+        description: 'O usuário foi removido do sistema com sucesso.',
+      });
+
       setDeletingUser(null);
       loadUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Erro ao deletar usuário');
+      showToast({
+        type: 'error',
+        message: 'Erro ao deletar usuário',
+        description: parseSupabaseError(error).message,
+      });
     }
   }
 
@@ -106,7 +155,7 @@ export default function Users() {
     );
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 text-primary animate-spin" />
@@ -114,8 +163,24 @@ export default function Users() {
     );
   }
 
+  // 🔒 SEGURANÇA: Usuário comum vê empty state
+  if (!isSuperAdmin) {
+    return <EmptyStateDevMode />;
+  }
+
   return (
     <div className="space-y-6">
+      {/* Toast Notifications */}
+      {toast && (
+        <Toast
+          type={toast.type}
+          message={toast.message}
+          description={toast.description}
+          onClose={hideToast}
+          duration={toast.duration}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Profissionais</h1>
@@ -246,6 +311,7 @@ interface EditUserModalProps {
 }
 
 function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
+  const { showToast } = useToast();
   const [fullName, setFullName] = useState(user.full_name);
   const [email, setEmail] = useState(user.email);
   const [role, setRole] = useState<'super_admin' | 'user'>(user.role);
@@ -280,9 +346,23 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
         console.warn('Could not update auth email:', authError);
       }
 
+      // ✨ Toast de sucesso
+      showToast({
+        type: 'success',
+        message: 'Usuário atualizado!',
+        description: 'As alterações foram salvas com sucesso.',
+      });
+
       onSuccess();
-    } catch (error: any) {
-      setError(error.message || 'Erro ao atualizar usuário');
+    } catch (error) {
+      const parsedError = parseSupabaseError(error);
+      setError(parsedError.message);
+      
+      showToast({
+        type: 'error',
+        message: 'Erro ao atualizar usuário',
+        description: parsedError.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -416,6 +496,7 @@ function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProp
 }
 
 function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
+  const { showToast } = useToast();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -429,34 +510,49 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
     setLoading(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // ✨ NOVO: Usar Admin API em vez de signUp
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email,
         password,
-        options: {
-          data: {
-            full_name: fullName,
-          },
+        email_confirm: true, // Já confirmar email automaticamente
+        user_metadata: {
+          full_name: fullName,
         },
       });
 
       if (authError) throw authError;
+      if (!authData.user) throw new Error('Falha ao criar usuário');
 
-      if (authData.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .insert({
-            id: authData.user.id,
-            email,
-            full_name: fullName,
-            role,
-          });
+      // Criar profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email,
+          full_name: fullName,
+          role,
+          is_active: true,
+        });
 
-        if (profileError) throw profileError;
+      if (profileError) throw profileError;
 
-        onSuccess();
-      }
-    } catch (error: any) {
-      setError(error.message || 'Erro ao criar usuário');
+      // ✨ Toast de sucesso
+      showToast({
+        type: 'success',
+        message: 'Usuário criado com sucesso!',
+        description: `${fullName} foi adicionado ao sistema.`,
+      });
+
+      onSuccess();
+    } catch (error) {
+      const parsedError = parseSupabaseError(error);
+      setError(parsedError.message);
+      
+      showToast({
+        type: 'error',
+        message: 'Erro ao criar usuário',
+        description: parsedError.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -550,6 +646,36 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================================
+// COMPONENTE: Empty State para User Comum
+// ============================================================================
+
+function EmptyStateDevMode() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="text-center max-w-md">
+        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+          <Settings className="w-10 h-10 text-primary" />
+        </div>
+        <h2 className="text-2xl font-bold text-text mb-3">
+          Página em Desenvolvimento
+        </h2>
+        <p className="text-text-muted mb-6">
+          Esta funcionalidade está sendo desenvolvida e estará disponível em breve.
+          Por enquanto, apenas administradores têm acesso a esta área.
+        </p>
+        <button
+          onClick={() => window.history.back()}
+          className="px-6 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-soft"
+        >
+          Voltar
+        </button>
       </div>
     </div>
   );
