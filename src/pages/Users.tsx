@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit2, Loader2, Search, Power, Trash2, Settings } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Power, Trash2, Settings, Calendar, Scissors, Users as UsersIcon, Key } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import Toast from '../components/Toast';
@@ -15,6 +15,21 @@ interface Profile {
   created_at: string;
 }
 
+interface UserStats {
+  appointmentsCount: number;
+  proceduresCount: number;
+  patientsCount: number;
+}
+
+interface UserDependencies {
+  hasAppointments: boolean;
+  appointmentsCount: number;
+  hasPatients: boolean;
+  patientsCount: number;
+  hasProcedures: boolean;
+  proceduresCount: number;
+}
+
 export default function Users() {
   const { isSuperAdmin, loading: authLoading, user: currentUser } = useAuth();
   const { toast, showToast, hideToast } = useToast();
@@ -24,6 +39,13 @@ export default function Users() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<Profile | null>(null);
   const [deletingUser, setDeletingUser] = useState<Profile | null>(null);
+  
+  // ✨ NOVO: Estado para estatísticas e filtros
+  const [userStats, setUserStats] = useState<Record<string, UserStats>>({});
+  const [filters, setFilters] = useState({
+    status: 'all', // 'all' | 'active' | 'inactive'
+    role: 'all',   // 'all' | 'super_admin' | 'user'
+  });
 
   // 🔒 SEGURANÇA: Verificar permissões
   useEffect(() => {
@@ -44,6 +66,11 @@ export default function Users() {
 
       if (error) throw error;
       setUsers(data || []);
+      
+      // ✨ Carregar estatísticas para cada usuário
+      if (data) {
+        await loadAllUserStats(data);
+      }
     } catch (error) {
       console.error('Error loading users:', error);
       showToast({
@@ -53,6 +80,93 @@ export default function Users() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ✨ NOVO: Carregar estatísticas de todos os usuários
+  async function loadAllUserStats(profiles: Profile[]) {
+    const stats: Record<string, UserStats> = {};
+
+    for (const profile of profiles) {
+      stats[profile.id] = await loadUserStats(profile.id);
+    }
+
+    setUserStats(stats);
+  }
+
+  // ✨ NOVO: Carregar estatísticas de um usuário
+  async function loadUserStats(userId: string): Promise<UserStats> {
+    try {
+      const [appointments, procedures, patients] = await Promise.all([
+        supabase
+          .from('appointments')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+        
+        supabase
+          .from('professional_procedures')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+        
+        supabase
+          .from('patients')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+      ]);
+
+      return {
+        appointmentsCount: appointments.count || 0,
+        proceduresCount: procedures.count || 0,
+        patientsCount: patients.count || 0,
+      };
+    } catch (error) {
+      console.error('Error loading user stats:', error);
+      return {
+        appointmentsCount: 0,
+        proceduresCount: 0,
+        patientsCount: 0,
+      };
+    }
+  }
+
+  // ✨ NOVO: Verificar dependências antes de deletar
+  async function checkUserDependencies(userId: string): Promise<UserDependencies> {
+    try {
+      const [appointments, patients, procedures] = await Promise.all([
+        supabase
+          .from('appointments')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+        
+        supabase
+          .from('patients')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+        
+        supabase
+          .from('professional_procedures')
+          .select('id', { count: 'exact', head: true })
+          .eq('professional_id', userId),
+      ]);
+
+      return {
+        hasAppointments: (appointments.count || 0) > 0,
+        appointmentsCount: appointments.count || 0,
+        hasPatients: (patients.count || 0) > 0,
+        patientsCount: patients.count || 0,
+        hasProcedures: (procedures.count || 0) > 0,
+        proceduresCount: procedures.count || 0,
+      };
+    } catch (error) {
+      console.error('Error checking dependencies:', error);
+      return {
+        hasAppointments: false,
+        appointmentsCount: 0,
+        hasPatients: false,
+        patientsCount: 0,
+        hasProcedures: false,
+        proceduresCount: 0,
+      };
     }
   }
 
@@ -126,10 +240,36 @@ export default function Users() {
     }
   }
 
-  const filteredUsers = users.filter((user) =>
-    user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // ✨ FILTROS: Busca + Status + Perfil
+  const filteredUsers = users.filter((user) => {
+    // Busca por texto
+    const matchesSearch = 
+      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Filtro de status
+    const matchesStatus = 
+      filters.status === 'all' ||
+      (filters.status === 'active' && user.is_active) ||
+      (filters.status === 'inactive' && !user.is_active);
+    
+    // Filtro de perfil
+    const matchesRole = 
+      filters.role === 'all' ||
+      filters.role === user.role;
+    
+    return matchesSearch && matchesStatus && matchesRole;
+  });
+
+  // ✨ NOVO: Formatar data de criação
+  function formatDate(dateString: string) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }
 
   const getRoleBadge = (role: string) => {
     return role === 'super_admin' ? (
@@ -209,10 +349,52 @@ export default function Users() {
           </div>
         </div>
 
+        {/* ✨ NOVO: Filtros */}
+        <div className="px-6 pb-4 flex items-center gap-3">
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+            className="px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
+          >
+            <option value="all">Todos os status</option>
+            <option value="active">Ativos</option>
+            <option value="inactive">Inativos</option>
+          </select>
+          
+          <select
+            value={filters.role}
+            onChange={(e) => setFilters({ ...filters, role: e.target.value })}
+            className="px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
+          >
+            <option value="all">Todos os perfis</option>
+            <option value="super_admin">Super Admin</option>
+            <option value="user">Profissional</option>
+          </select>
+
+          {(filters.status !== 'all' || filters.role !== 'all' || searchTerm) && (
+            <button
+              onClick={() => {
+                setFilters({ status: 'all', role: 'all' });
+                setSearchTerm('');
+              }}
+              className="px-4 py-2 text-sm text-text-muted hover:text-text transition-colors"
+            >
+              Limpar filtros
+            </button>
+          )}
+
+          <div className="ml-auto text-sm text-text-muted">
+            {filteredUsers.length} {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
+          </div>
+        </div>
+      </div>
+
         {filteredUsers.length === 0 ? (
           <div className="p-12 text-center">
             <p className="text-text-muted">
-              {searchTerm ? 'Nenhum usuário encontrado' : 'Nenhum usuário cadastrado'}
+              {searchTerm || filters.status !== 'all' || filters.role !== 'all' 
+                ? 'Nenhum usuário encontrado com os filtros aplicados' 
+                : 'Nenhum usuário cadastrado'}
             </p>
           </div>
         ) : (
@@ -224,6 +406,8 @@ export default function Users() {
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">E-mail</th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">Perfil</th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">Status</th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-text">Estatísticas</th>
+                  <th className="text-left px-6 py-4 text-sm font-semibold text-text">Criado em</th>
                   <th className="text-right px-6 py-4 text-sm font-semibold text-text">Ações</th>
                 </tr>
               </thead>
@@ -234,6 +418,29 @@ export default function Users() {
                     <td className="px-6 py-4 text-text-muted">{user.email}</td>
                     <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
                     <td className="px-6 py-4">{getStatusBadge(user.is_active)}</td>
+                    <td className="px-6 py-4">
+                      {userStats[user.id] ? (
+                        <div className="flex items-center gap-4 text-sm text-text-muted">
+                          <div className="flex items-center gap-1" title="Agendamentos">
+                            <Calendar className="w-4 h-4" />
+                            <span>{userStats[user.id].appointmentsCount}</span>
+                          </div>
+                          <div className="flex items-center gap-1" title="Procedimentos">
+                            <Scissors className="w-4 h-4" />
+                            <span>{userStats[user.id].proceduresCount}</span>
+                          </div>
+                          <div className="flex items-center gap-1" title="Pacientes">
+                            <UsersIcon className="w-4 h-4" />
+                            <span>{userStats[user.id].patientsCount}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-text-muted">
+                      {formatDate(user.created_at)}
+                    </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -318,6 +525,11 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
   const [isActive, setIsActive] = useState(user.is_active);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // ✨ NOVO: Estado para reset de senha
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -365,6 +577,46 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ✨ NOVO: Função para resetar senha
+  async function handleResetPassword() {
+    if (newPassword.length < 6) {
+      showToast({
+        type: 'error',
+        message: 'Senha muito curta',
+        description: 'A senha deve ter no mínimo 6 caracteres.',
+      });
+      return;
+    }
+
+    setResettingPassword(true);
+
+    try {
+      const { error } = await supabase.auth.admin.updateUserById(
+        user.id,
+        { password: newPassword }
+      );
+
+      if (error) throw error;
+
+      showToast({
+        type: 'success',
+        message: 'Senha resetada!',
+        description: 'A nova senha foi definida com sucesso.',
+      });
+
+      setShowPasswordReset(false);
+      setNewPassword('');
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message: 'Erro ao resetar senha',
+        description: parseSupabaseError(error).message,
+      });
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -430,6 +682,43 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
             </label>
           </div>
 
+          {/* ✨ NOVO: Seção de Reset de Senha */}
+          <div className="border-t border-accent/20 pt-4 mt-4">
+            <button
+              type="button"
+              onClick={() => setShowPasswordReset(!showPasswordReset)}
+              className="flex items-center gap-2 text-sm text-primary hover:underline"
+            >
+              <Key className="w-4 h-4" />
+              {showPasswordReset ? 'Cancelar reset de senha' : 'Resetar senha deste usuário'}
+            </button>
+            
+            {showPasswordReset && (
+              <div className="mt-4 space-y-3 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <p className="text-sm text-orange-800 font-medium">
+                  ⚠️ Definir nova senha para {user.full_name}
+                </p>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Nova senha (mín. 6 caracteres)"
+                  className="w-full px-4 py-2 bg-white border border-orange-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-text"
+                  minLength={6}
+                  disabled={resettingPassword}
+                />
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50"
+                  disabled={newPassword.length < 6 || resettingPassword}
+                >
+                  {resettingPassword ? 'Resetando...' : 'Confirmar Nova Senha'}
+                </button>
+              </div>
+            )}
+          </div>
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -466,33 +755,129 @@ interface DeleteConfirmModalProps {
 }
 
 function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProps) {
+  const [dependencies, setDependencies] = useState<UserDependencies | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    checkDependencies();
+  }, [user.id]);
+
+  async function checkDependencies() {
+    setLoading(true);
+    // Usar a função do componente pai
+    const deps = await checkUserDependenciesForModal(user.id);
+    setDependencies(deps);
+    setLoading(false);
+  }
+
+  const hasDependencies = dependencies && (
+    dependencies.hasAppointments ||
+    dependencies.hasPatients ||
+    dependencies.hasProcedures
+  );
+
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
       <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
         <h2 className="text-xl font-semibold text-text mb-4">Confirmar Exclusão</h2>
 
-        <p className="text-text-muted mb-6">
-          Tem certeza que deseja deletar o usuário <strong className="text-text">{user.full_name}</strong>?
-          Esta ação não pode ser desfeita.
-        </p>
+        {loading ? (
+          <div className="py-6 text-center">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+            <p className="text-sm text-text-muted mt-2">Verificando dependências...</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-text-muted mb-4">
+              Tem certeza que deseja deletar <strong className="text-text">{user.full_name}</strong>?
+            </p>
 
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-          >
-            Deletar
-          </button>
-        </div>
+            {hasDependencies && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                <p className="text-sm font-medium text-orange-800 mb-2">
+                  ⚠️ Este usuário possui dados associados:
+                </p>
+                <ul className="text-sm text-orange-700 space-y-1">
+                  {dependencies.hasAppointments && (
+                    <li>• {dependencies.appointmentsCount} agendamento(s)</li>
+                  )}
+                  {dependencies.hasPatients && (
+                    <li>• {dependencies.patientsCount} paciente(s)</li>
+                  )}
+                  {dependencies.hasProcedures && (
+                    <li>• {dependencies.proceduresCount} procedimento(s) associado(s)</li>
+                  )}
+                </ul>
+                <p className="text-sm text-orange-800 mt-2 font-medium">
+                  Todos esses dados serão deletados permanentemente!
+                </p>
+              </div>
+            )}
+
+            <p className="text-sm text-red-600 font-medium mb-6">
+              Esta ação não pode ser desfeita.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={onConfirm}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                {hasDependencies ? 'Deletar Tudo' : 'Deletar'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
+}
+
+// Helper function para o modal
+async function checkUserDependenciesForModal(userId: string): Promise<UserDependencies> {
+  try {
+    const [appointments, patients, procedures] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+      
+      supabase
+        .from('patients')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+      
+      supabase
+        .from('professional_procedures')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+    ]);
+
+    return {
+      hasAppointments: (appointments.count || 0) > 0,
+      appointmentsCount: appointments.count || 0,
+      hasPatients: (patients.count || 0) > 0,
+      patientsCount: patients.count || 0,
+      hasProcedures: (procedures.count || 0) > 0,
+      proceduresCount: procedures.count || 0,
+    };
+  } catch (error) {
+    console.error('Error checking dependencies:', error);
+    return {
+      hasAppointments: false,
+      appointmentsCount: 0,
+      hasPatients: false,
+      patientsCount: 0,
+      hasProcedures: false,
+      proceduresCount: 0,
+    };
+  }
 }
 
 function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
