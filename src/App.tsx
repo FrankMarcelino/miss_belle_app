@@ -10,12 +10,27 @@ import CashRegister from './pages/CashRegister';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
 
 function App() {
   const { user, loading, profile } = useAuth();
-  const { currentRoute } = useRouter();
+  const { currentRoute, navigate, getDefaultRoute } = useRouter();
 
-  console.log('🎯 App render - loading:', loading, 'user:', user?.id, 'profile:', profile?.id);
+  console.log('🎯 App render - loading:', loading, 'user:', user?.id, 'profile:', profile?.id, 'currentRoute:', currentRoute);
+
+  // ✨ Redirecionar para rota apropriada quando usuário está logado
+  useEffect(() => {
+    if (!loading && user && profile) {
+      console.log('🔄 App: User logged in, ensuring proper route');
+      const defaultRoute = getDefaultRoute(profile.role === 'super_admin');
+      
+      // Se não está em nenhuma rota válida, navegar para a padrão
+      if (!currentRoute || currentRoute === '/') {
+        console.log('➡️ App: Navigating to default route:', defaultRoute);
+        navigate(defaultRoute);
+      }
+    }
+  }, [loading, user, profile, currentRoute, navigate, getDefaultRoute]);
 
   if (loading) {
     console.log('⏳ App: Still loading...');
