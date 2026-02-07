@@ -181,8 +181,9 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
       if (insertError) throw insertError;
 
       onSuccess();
-    } catch (error: any) {
-      setError(error.message || 'Erro ao criar paciente');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao criar paciente';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

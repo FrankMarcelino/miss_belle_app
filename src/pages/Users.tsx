@@ -129,47 +129,6 @@ export default function Users() {
     }
   }
 
-  // ✨ NOVO: Verificar dependências antes de deletar
-  async function checkUserDependencies(userId: string): Promise<UserDependencies> {
-    try {
-      const [appointments, patients, procedures] = await Promise.all([
-        supabase
-          .from('appointments')
-          .select('id', { count: 'exact', head: true })
-          .eq('professional_id', userId),
-        
-        supabase
-          .from('patients')
-          .select('id', { count: 'exact', head: true })
-          .eq('professional_id', userId),
-        
-        supabase
-          .from('professional_procedures')
-          .select('id', { count: 'exact', head: true })
-          .eq('professional_id', userId),
-      ]);
-
-      return {
-        hasAppointments: (appointments.count || 0) > 0,
-        appointmentsCount: appointments.count || 0,
-        hasPatients: (patients.count || 0) > 0,
-        patientsCount: patients.count || 0,
-        hasProcedures: (procedures.count || 0) > 0,
-        proceduresCount: procedures.count || 0,
-      };
-    } catch (error) {
-      console.error('Error checking dependencies:', error);
-      return {
-        hasAppointments: false,
-        appointmentsCount: 0,
-        hasPatients: false,
-        patientsCount: 0,
-        hasProcedures: false,
-        proceduresCount: 0,
-      };
-    }
-  }
-
   async function handleToggleStatus(userId: string, currentStatus: boolean) {
     try {
       const { error } = await supabase
@@ -387,7 +346,6 @@ export default function Users() {
             {filteredUsers.length} {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
           </div>
         </div>
-      </div>
 
         {filteredUsers.length === 0 ? (
           <div className="p-12 text-center">
@@ -489,7 +447,7 @@ export default function Users() {
             ))}
           </div>
         </>
-        )}
+      )}
       </div>
 
       {showCreateModal && (
@@ -782,8 +740,7 @@ function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProp
 
   async function checkDependencies() {
     setLoading(true);
-    // Usar a função do componente pai
-    const deps = await checkUserDependenciesForModal(user.id);
+    const deps = await checkUserDependenciesGlobal(user.id);
     setDependencies(deps);
     setLoading(false);
   }
@@ -855,47 +812,6 @@ function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProp
       </div>
     </div>
   );
-}
-
-// Helper function para o modal
-async function checkUserDependenciesForModal(userId: string): Promise<UserDependencies> {
-  try {
-    const [appointments, patients, procedures] = await Promise.all([
-      supabase
-        .from('appointments')
-        .select('id', { count: 'exact', head: true })
-        .eq('professional_id', userId),
-      
-      supabase
-        .from('patients')
-        .select('id', { count: 'exact', head: true })
-        .eq('professional_id', userId),
-      
-      supabase
-        .from('professional_procedures')
-        .select('id', { count: 'exact', head: true })
-        .eq('professional_id', userId),
-    ]);
-
-    return {
-      hasAppointments: (appointments.count || 0) > 0,
-      appointmentsCount: appointments.count || 0,
-      hasPatients: (patients.count || 0) > 0,
-      patientsCount: patients.count || 0,
-      hasProcedures: (procedures.count || 0) > 0,
-      proceduresCount: procedures.count || 0,
-    };
-  } catch (error) {
-    console.error('Error checking dependencies:', error);
-    return {
-      hasAppointments: false,
-      appointmentsCount: 0,
-      hasPatients: false,
-      patientsCount: 0,
-      hasProcedures: false,
-      proceduresCount: 0,
-    };
-  }
 }
 
 function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
@@ -1152,6 +1068,51 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
       </div>
     </div>
   );
+}
+
+
+// ============================================================================
+// HELPER: Check User Dependencies (Global)
+// ============================================================================
+
+async function checkUserDependenciesGlobal(userId: string): Promise<UserDependencies> {
+  try {
+    const [appointments, patients, procedures] = await Promise.all([
+      supabase
+        .from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+      
+      supabase
+        .from('patients')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+      
+      supabase
+        .from('professional_procedures')
+        .select('id', { count: 'exact', head: true })
+        .eq('professional_id', userId),
+    ]);
+
+    return {
+      hasAppointments: (appointments.count || 0) > 0,
+      appointmentsCount: appointments.count || 0,
+      hasPatients: (patients.count || 0) > 0,
+      patientsCount: patients.count || 0,
+      hasProcedures: (procedures.count || 0) > 0,
+      proceduresCount: procedures.count || 0,
+    };
+  } catch (error) {
+    console.error('Error checking dependencies:', error);
+    return {
+      hasAppointments: false,
+      appointmentsCount: 0,
+      hasPatients: false,
+      patientsCount: 0,
+      hasProcedures: false,
+      proceduresCount: 0,
+    };
+  }
 }
 
 

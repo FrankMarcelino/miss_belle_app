@@ -786,8 +786,8 @@ function CreateAppointmentForm({
       
       // Extrair os dados dos procedimentos da resposta
       const proceduresList = data
-        ?.map((item: any) => item.procedures)
-        .filter((proc: any) => proc !== null) || [];
+        ?.map((item: { procedures: Procedure | null }) => item.procedures)
+        .filter((proc: Procedure | null): proc is Procedure => proc !== null) || [];
       
       setProcedures(proceduresList);
     } catch (error) {

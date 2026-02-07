@@ -126,9 +126,10 @@ export default function CashRegister() {
       setSelectedClosing(data);
       setShowTransactions(true);
       loadClosings();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating closing:', error);
-      alert(error.message || 'Erro ao criar fechamento');
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao criar fechamento';
+      alert(errorMessage);
     }
   }
 
@@ -528,12 +529,18 @@ interface AddTransactionModalProps {
   onSuccess: () => void;
 }
 
+interface TodayAppointment {
+  id: string;
+  patient: { full_name: string } | null;
+  procedure: { name: string } | null;
+}
+
 function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: AddTransactionModalProps) {
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
   const [notes, setNotes] = useState('');
   const [appointmentId, setAppointmentId] = useState('');
-  const [appointments, setAppointments] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<TodayAppointment[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -576,9 +583,10 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
 
       // Trigger will automatically update the closing total
       onSuccess();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error adding transaction:', error);
-      alert(error.message || 'Erro ao adicionar transação. Verifique se o fechamento não está finalizado.');
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao adicionar transação. Verifique se o fechamento não está finalizado.';
+      alert(errorMessage);
     } finally {
       setLoading(false);
     }

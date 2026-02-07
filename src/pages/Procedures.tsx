@@ -170,8 +170,9 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
       if (insertError) throw insertError;
 
       onSuccess();
-    } catch (error: any) {
-      setError(error.message || 'Erro ao criar procedimento');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao criar procedimento';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
