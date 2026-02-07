@@ -170,22 +170,27 @@ export default function Users() {
     try {
       // ✨ NOVO: Deletar dados relacionados ANTES do profile (ordem FK)
       
-      // 1. Deletar transações do caixa (referencia appointments)
-      const { error: transactionsError } = await supabase
-        .from('cash_register_transactions')
-        .delete()
-        .in('appointment_id', 
-          supabase
-            .from('appointments')
-            .select('id')
-            .eq('professional_id', userId)
-        );
-      
-      if (transactionsError) {
-        console.warn('Error deleting transactions:', transactionsError);
+      // 1. Primeiro, buscar IDs dos agendamentos deste profissional
+      const { data: userAppointments } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('professional_id', userId);
+
+      const appointmentIds = userAppointments?.map(a => a.id) || [];
+
+      // 2. Deletar transações do caixa (referencia appointments)
+      if (appointmentIds.length > 0) {
+        const { error: transactionsError } = await supabase
+          .from('cash_register_transactions')
+          .delete()
+          .in('appointment_id', appointmentIds);
+        
+        if (transactionsError) {
+          console.warn('Error deleting transactions:', transactionsError);
+        }
       }
 
-      // 2. Deletar agendamentos (referencia procedures, patients, professional)
+      // 3. Deletar agendamentos (referencia procedures, patients, professional)
       const { error: appointmentsError } = await supabase
         .from('appointments')
         .delete()
@@ -195,7 +200,7 @@ export default function Users() {
         console.warn('Error deleting appointments:', appointmentsError);
       }
 
-      // 3. Deletar pacientes (referencia professional)
+      // 4. Deletar pacientes (referencia professional)
       const { error: patientsError } = await supabase
         .from('patients')
         .delete()
@@ -205,7 +210,7 @@ export default function Users() {
         console.warn('Error deleting patients:', patientsError);
       }
 
-      // 4. Deletar associações de procedimentos
+      // 5. Deletar associações de procedimentos
       const { error: proceduresError } = await supabase
         .from('professional_procedures')
         .delete()
@@ -215,7 +220,7 @@ export default function Users() {
         console.warn('Error deleting professional_procedures:', proceduresError);
       }
 
-      // 5. Deletar fechamentos de caixa
+      // 6. Deletar fechamentos de caixa
       const { error: closingsError } = await supabase
         .from('cash_register_closings')
         .delete()
@@ -225,7 +230,7 @@ export default function Users() {
         console.warn('Error deleting cash register closings:', closingsError);
       }
 
-      // 6. Finalmente, deletar o profile
+      // 7. Finalmente, deletar o profile
       const { error: profileError } = await supabase
         .from('profiles')
         .delete()
@@ -233,7 +238,7 @@ export default function Users() {
 
       if (profileError) throw profileError;
 
-      // 7. Deletar do auth (opcional, pode falhar se não tiver permissão)
+      // 8. Deletar do auth (opcional, pode falhar se não tiver permissão)
       const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
       if (authError) {
