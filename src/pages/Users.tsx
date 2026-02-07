@@ -15,6 +15,14 @@ interface Profile {
   created_at: string;
 }
 
+interface Procedure {
+  id: string;
+  name: string;
+  duration_minutes: number;
+  default_price: number;
+  is_active: boolean;
+}
+
 interface UserStats {
   appointmentsCount: number;
   proceduresCount: number;
@@ -571,6 +579,61 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
   const [newPassword, setNewPassword] = useState('');
   const [resettingPassword, setResettingPassword] = useState(false);
 
+  // ✨ NOVO: Estado para gestão de procedimentos
+  const [procedures, setProcedures] = useState<Procedure[]>([]);
+  const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
+  const [loadingProcedures, setLoadingProcedures] = useState(false);
+  const [initialProcedures, setInitialProcedures] = useState<string[]>([]);
+
+  // ✨ Carregar procedimentos disponíveis e procedimentos atuais do usuário
+  useEffect(() => {
+    loadProcedures();
+    loadUserProcedures();
+  }, []);
+
+  async function loadProcedures() {
+    setLoadingProcedures(true);
+    try {
+      const { data, error } = await supabase
+        .from('procedures')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setProcedures(data || []);
+    } catch (error) {
+      console.error('Error loading procedures:', error);
+    } finally {
+      setLoadingProcedures(false);
+    }
+  }
+
+  async function loadUserProcedures() {
+    try {
+      const { data, error } = await supabase
+        .from('professional_procedures')
+        .select('procedure_id')
+        .eq('professional_id', user.id);
+
+      if (error) throw error;
+      
+      const procIds = data?.map(p => p.procedure_id) || [];
+      setSelectedProcedures(procIds);
+      setInitialProcedures(procIds);
+    } catch (error) {
+      console.error('Error loading user procedures:', error);
+    }
+  }
+
+  function toggleProcedure(procedureId: string) {
+    if (selectedProcedures.includes(procedureId)) {
+      setSelectedProcedures(selectedProcedures.filter(id => id !== procedureId));
+    } else {
+      setSelectedProcedures([...selectedProcedures, procedureId]);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -596,6 +659,40 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
 
       if (authError) {
         console.warn('Could not update auth email:', authError);
+      }
+
+      // ✨ NOVO: Atualizar procedimentos associados
+      // Identificar procedimentos a adicionar e remover
+      const toAdd = selectedProcedures.filter(id => !initialProcedures.includes(id));
+      const toRemove = initialProcedures.filter(id => !selectedProcedures.includes(id));
+
+      // Remover procedimentos desmarcados
+      if (toRemove.length > 0) {
+        const { error: removeError } = await supabase
+          .from('professional_procedures')
+          .delete()
+          .eq('professional_id', user.id)
+          .in('procedure_id', toRemove);
+
+        if (removeError) {
+          console.warn('Error removing procedures:', removeError);
+        }
+      }
+
+      // Adicionar novos procedimentos
+      if (toAdd.length > 0) {
+        const associations = toAdd.map(procId => ({
+          professional_id: user.id,
+          procedure_id: procId,
+        }));
+
+        const { error: addError } = await supabase
+          .from('professional_procedures')
+          .insert(associations);
+
+        if (addError) {
+          console.warn('Error adding procedures:', addError);
+        }
       }
 
       // ✨ Toast de sucesso
@@ -759,6 +856,56 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
             )}
           </div>
 
+          {/* ✨ NOVO: Gestão de Procedimentos (apenas para profissionais) */}
+          {role === 'user' && (
+            <div className="border-t border-accent/20 pt-4 mt-4">
+              <label className="block text-sm font-medium text-text mb-2">
+                <div className="flex items-center gap-2">
+                  <Scissors className="w-4 h-4" />
+                  Procedimentos Associados
+                </div>
+              </label>
+              <div className="max-h-48 overflow-y-auto border border-accent/30 rounded-lg bg-champagne-nuvem">
+                {loadingProcedures ? (
+                  <div className="p-4 text-center">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
+                    <p className="text-xs text-text-muted mt-2">Carregando procedimentos...</p>
+                  </div>
+                ) : procedures.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-text-muted">
+                    Nenhum procedimento disponível
+                  </div>
+                ) : (
+                  <div className="p-3 space-y-2">
+                    {procedures.map((proc) => (
+                      <label
+                        key={proc.id}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-background p-2 rounded transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedProcedures.includes(proc.id)}
+                          onChange={() => toggleProcedure(proc.id)}
+                          className="w-4 h-4 text-primary bg-background border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                          disabled={loading}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-text block truncate">{proc.name}</span>
+                          <span className="text-xs text-text-muted">
+                            {proc.duration_minutes}min • R$ {proc.default_price.toFixed(2)}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-text-muted mt-2">
+                {selectedProcedures.length} procedimento(s) selecionado(s)
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -888,7 +1035,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
   const [error, setError] = useState('');
   
   // ✨ NOVO: Estado para gestão de procedimentos
-  const [procedures, setProcedures] = useState<any[]>([]);
+  const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
   const [loadingProcedures, setLoadingProcedures] = useState(false);
 
