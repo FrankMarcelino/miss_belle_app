@@ -398,7 +398,9 @@ export default function Users() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* Desktop: Tabela */}
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-accent/20">
@@ -471,6 +473,22 @@ export default function Users() {
               </tbody>
             </table>
           </div>
+
+          {/* Mobile: Cards */}
+          <div className="md:hidden space-y-4 p-4">
+            {filteredUsers.map((user) => (
+              <UserCard
+                key={user.id}
+                user={user}
+                stats={userStats[user.id]}
+                onEdit={() => setEditingUser(user)}
+                onToggleStatus={() => handleToggleStatus(user.id, user.is_active)}
+                onDelete={() => setDeletingUser(user)}
+                formatDate={formatDate}
+              />
+            ))}
+          </div>
+        </>
         )}
       </div>
 
@@ -888,6 +906,42 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
   const [role, setRole] = useState<'super_admin' | 'user'>('user');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
+  // ✨ NOVO: Estado para gestão de procedimentos
+  const [procedures, setProcedures] = useState<any[]>([]);
+  const [selectedProcedures, setSelectedProcedures] = useState<string[]>([]);
+  const [loadingProcedures, setLoadingProcedures] = useState(false);
+
+  // ✨ Carregar procedimentos disponíveis
+  useEffect(() => {
+    loadProcedures();
+  }, []);
+
+  async function loadProcedures() {
+    setLoadingProcedures(true);
+    try {
+      const { data, error } = await supabase
+        .from('procedures')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setProcedures(data || []);
+    } catch (error) {
+      console.error('Error loading procedures:', error);
+    } finally {
+      setLoadingProcedures(false);
+    }
+  }
+
+  function toggleProcedure(procedureId: string) {
+    if (selectedProcedures.includes(procedureId)) {
+      setSelectedProcedures(selectedProcedures.filter(id => id !== procedureId));
+    } else {
+      setSelectedProcedures([...selectedProcedures, procedureId]);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -921,11 +975,28 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
 
       if (profileError) throw profileError;
 
+      // ✨ NOVO: Associar procedimentos selecionados
+      if (selectedProcedures.length > 0) {
+        const associations = selectedProcedures.map((procId) => ({
+          professional_id: authData.user.id,
+          procedure_id: procId,
+        }));
+
+        const { error: assocError } = await supabase
+          .from('professional_procedures')
+          .insert(associations);
+
+        if (assocError) {
+          console.warn('Erro ao associar procedimentos:', assocError);
+          // Não bloqueia a criação do usuário
+        }
+      }
+
       // ✨ Toast de sucesso
       showToast({
         type: 'success',
         message: 'Usuário criado com sucesso!',
-        description: `${fullName} foi adicionado ao sistema.`,
+        description: `${fullName} foi adicionado ao sistema${selectedProcedures.length > 0 ? ` com ${selectedProcedures.length} procedimento(s)` : ''}.`,
       });
 
       onSuccess();
@@ -1007,6 +1078,53 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
             </select>
           </div>
 
+          {/* ✨ NOVO: Gestão de Procedimentos (apenas para profissionais) */}
+          {role === 'user' && (
+            <div>
+              <label className="block text-sm font-medium text-text mb-2">
+                Procedimentos (opcional)
+              </label>
+              <div className="max-h-48 overflow-y-auto border border-accent/30 rounded-lg bg-champagne-nuvem">
+                {loadingProcedures ? (
+                  <div className="p-4 text-center">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
+                    <p className="text-xs text-text-muted mt-2">Carregando procedimentos...</p>
+                  </div>
+                ) : procedures.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-text-muted">
+                    Nenhum procedimento disponível
+                  </div>
+                ) : (
+                  <div className="p-3 space-y-2">
+                    {procedures.map((proc) => (
+                      <label
+                        key={proc.id}
+                        className="flex items-center gap-2 cursor-pointer hover:bg-background p-2 rounded transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedProcedures.includes(proc.id)}
+                          onChange={() => toggleProcedure(proc.id)}
+                          className="w-4 h-4 text-primary bg-background border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                          disabled={loading}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-text block truncate">{proc.name}</span>
+                          <span className="text-xs text-text-muted">
+                            {proc.duration_minutes}min • R$ {proc.default_price.toFixed(2)}
+                          </span>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-text-muted mt-2">
+                {selectedProcedures.length} procedimento(s) selecionado(s)
+              </p>
+            </div>
+          )}
+
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {error}
@@ -1036,6 +1154,112 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
   );
 }
 
+
+// ============================================================================
+// COMPONENTE: User Card (Mobile)
+// ============================================================================
+
+interface UserCardProps {
+  user: Profile;
+  stats?: UserStats;
+  onEdit: () => void;
+  onToggleStatus: () => void;
+  onDelete: () => void;
+  formatDate: (date: string) => string;
+}
+
+function UserCard({ user, stats, onEdit, onToggleStatus, onDelete, formatDate }: UserCardProps) {
+  const getRoleBadge = (role: string) => {
+    return role === 'super_admin' ? (
+      <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full">
+        Super Admin
+      </span>
+    ) : (
+      <span className="px-3 py-1 bg-accent/10 text-accent text-xs font-medium rounded-full">
+        Profissional
+      </span>
+    );
+  };
+
+  const getStatusBadge = (isActive: boolean) => {
+    return isActive ? (
+      <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+        Ativo
+      </span>
+    ) : (
+      <span className="px-3 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded-full">
+        Inativo
+      </span>
+    );
+  };
+
+  return (
+    <div className="bg-background-card border border-accent/20 rounded-xl p-4 shadow-soft">
+      {/* Header */}
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-text truncate">{user.full_name}</h3>
+          <p className="text-sm text-text-muted truncate">{user.email}</p>
+          <p className="text-xs text-text-muted mt-1">
+            Criado em {formatDate(user.created_at)}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2 ml-3">
+          {getRoleBadge(user.role)}
+          {getStatusBadge(user.is_active)}
+        </div>
+      </div>
+
+      {/* Stats */}
+      {stats ? (
+        <div className="flex items-center gap-4 text-sm text-text-muted mb-4 pb-4 border-b border-accent/20">
+          <div className="flex items-center gap-1" title="Agendamentos">
+            <Calendar className="w-4 h-4" />
+            <span>{stats.appointmentsCount}</span>
+          </div>
+          <div className="flex items-center gap-1" title="Procedimentos">
+            <Scissors className="w-4 h-4" />
+            <span>{stats.proceduresCount}</span>
+          </div>
+          <div className="flex items-center gap-1" title="Pacientes">
+            <UsersIcon className="w-4 h-4" />
+            <span>{stats.patientsCount}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-4 pb-4 border-b border-accent/20 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
+          <span className="text-sm text-text-muted">Carregando estatísticas...</span>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onEdit}
+          className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 text-sm bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors min-h-[48px]"
+        >
+          <Edit2 className="w-4 h-4" />
+          Editar
+        </button>
+        <button
+          onClick={onToggleStatus}
+          className="px-3 py-2.5 text-sm bg-champagne-nuvem hover:bg-accent/20 rounded-lg transition-colors min-h-[48px] min-w-[48px] flex items-center justify-center"
+          title={user.is_active ? 'Desativar' : 'Ativar'}
+        >
+          <Power className="w-5 h-5" />
+        </button>
+        <button
+          onClick={onDelete}
+          className="px-3 py-2.5 text-sm bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors min-h-[48px] min-w-[48px] flex items-center justify-center"
+          title="Deletar"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ============================================================================
 // COMPONENTE: Empty State para User Comum
