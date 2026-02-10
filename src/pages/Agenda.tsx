@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BottomSheet from '../components/mobile/BottomSheet';
@@ -6,7 +6,8 @@ import PatientAutocomplete from '../components/mobile/PatientAutocomplete';
 import PaymentModal from '../components/PaymentModal';
 import { useToast } from '../components/Toast';
 import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
-import { Plus, Loader2, ChevronLeft, ChevronRight, AlertCircle, Clock, Search } from 'lucide-react';
+import { formatWhatsAppUrl } from '../lib/whatsapp';
+import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -21,7 +22,7 @@ interface Appointment {
   downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
   downpayment_notes?: string | null;
   has_payment?: boolean;
-  patient?: { full_name: string };
+  patient?: { full_name: string; phone?: string };
   procedure?: { name: string; duration_minutes: number; default_price?: number };
   professional?: { full_name: string };
 }
@@ -38,7 +39,7 @@ interface Professional {
   full_name: string;
 }
 
-type ViewMode = 'day' | 'week';
+type ViewMode = 'day' | 'week' | 'month';
 
 export default function Agenda() {
   const { user, isSuperAdmin } = useAuth();
@@ -50,7 +51,7 @@ export default function Agenda() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedProfessional, setSelectedProfessional] = useState<string>('');
   const [professionals, setProfessionals] = useState<Professional[]>([]);
-  
+
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -84,8 +85,8 @@ export default function Agenda() {
         .from('appointments')
         .select(`
           *,
-          patient:patients(full_name),
-          procedure:procedures(name, duration_minutes),
+          patient:patients(full_name, phone),
+          procedure:procedures(name, duration_minutes, default_price),
           professional:profiles!professional_id(full_name)
         `)
         .order('appointment_time');
@@ -94,12 +95,18 @@ export default function Agenda() {
 
       if (viewMode === 'day') {
         query = query.eq('appointment_date', dateStr);
-      } else {
+      } else if (viewMode === 'week') {
         const startOfWeek = getStartOfWeek(currentDate);
         const endOfWeek = getEndOfWeek(currentDate);
         query = query
           .gte('appointment_date', startOfWeek.toISOString().split('T')[0])
           .lte('appointment_date', endOfWeek.toISOString().split('T')[0]);
+      } else {
+        const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        query = query
+          .gte('appointment_date', firstDay.toISOString().split('T')[0])
+          .lte('appointment_date', lastDay.toISOString().split('T')[0]);
       }
 
       if (!isSuperAdmin && user) {
@@ -135,8 +142,10 @@ export default function Agenda() {
     const newDate = new Date(currentDate);
     if (viewMode === 'day') {
       newDate.setDate(newDate.getDate() + (direction === 'next' ? 1 : -1));
-    } else {
+    } else if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() + (direction === 'next' ? 7 : -7));
+    } else {
+      newDate.setMonth(newDate.getMonth() + (direction === 'next' ? 1 : -1));
     }
     setCurrentDate(newDate);
   }
@@ -193,6 +202,15 @@ export default function Agenda() {
     return true;
   });
 
+  // Status counters
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { scheduled: 0, confirmed: 0, completed: 0, cancelled: 0 };
+    for (const apt of appointments) {
+      counts[apt.status] = (counts[apt.status] || 0) + 1;
+    }
+    return counts;
+  }, [appointments]);
+
   const groupedAppointments = viewMode === 'day'
     ? { [currentDate.toISOString().split('T')[0]]: filteredAppointments }
     : filteredAppointments.reduce((acc, apt) => {
@@ -210,6 +228,36 @@ export default function Agenda() {
         return d;
       })
     : [currentDate];
+
+  function getDateLabel() {
+    if (viewMode === 'day') {
+      return currentDate.toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+    } else if (viewMode === 'week') {
+      return `${getStartOfWeek(currentDate).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+      })} - ${getEndOfWeek(currentDate).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })}`;
+    } else {
+      return currentDate.toLocaleDateString('pt-BR', {
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+  }
+
+  function handleMonthDayClick(day: Date) {
+    setCurrentDate(day);
+    setViewMode('day');
+  }
 
   return (
     <div className="space-y-6">
@@ -247,7 +295,7 @@ export default function Agenda() {
           />
         </div>
 
-        {/* Status Filter Chips */}
+        {/* Status Filter Chips with Counters */}
         <div className="flex gap-2 overflow-x-auto pb-2 scroll-hidden">
           {[
             { value: 'all', label: 'Todos' },
@@ -255,19 +303,24 @@ export default function Agenda() {
             { value: 'confirmed', label: 'Confirmados' },
             { value: 'completed', label: 'Realizados' },
             { value: 'cancelled', label: 'Cancelados' },
-          ].map((filter) => (
-            <button
-              key={filter.value}
-              onClick={() => setStatusFilter(filter.value)}
-              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
-                statusFilter === filter.value
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-background-card text-text border-accent/20 hover:bg-champagne-nuvem'
-              }`}
-            >
-              {filter.label}
-            </button>
-          ))}
+          ].map((filter) => {
+            const count = filter.value === 'all'
+              ? appointments.length
+              : statusCounts[filter.value] || 0;
+            return (
+              <button
+                key={filter.value}
+                onClick={() => setStatusFilter(filter.value)}
+                className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
+                  statusFilter === filter.value
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-background-card text-text border-accent/20 hover:bg-champagne-nuvem'
+                }`}
+              >
+                {filter.label} ({count})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -295,6 +348,16 @@ export default function Agenda() {
               >
                 Semana
               </button>
+              <button
+                onClick={() => setViewMode('month')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'month'
+                    ? 'bg-primary text-white'
+                    : 'text-text hover:bg-background-card'
+                }`}
+              >
+                Mês
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -318,22 +381,8 @@ export default function Agenda() {
               </button>
             </div>
 
-            <div className="text-text font-semibold">
-              {viewMode === 'day'
-                ? currentDate.toLocaleDateString('pt-BR', {
-                    weekday: 'long',
-                    day: '2-digit',
-                    month: 'long',
-                    year: 'numeric',
-                  })
-                : `${getStartOfWeek(currentDate).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'short',
-                  })} - ${getEndOfWeek(currentDate).toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  })}`}
+            <div className="text-text font-semibold capitalize">
+              {getDateLabel()}
             </div>
           </div>
 
@@ -366,18 +415,26 @@ export default function Agenda() {
           <div className="p-6">
             {viewMode === 'day' ? (
               <DayView
-                appointments={appointments}
+                appointments={filteredAppointments}
                 getStatusColor={getStatusColor}
                 getStatusLabel={getStatusLabel}
                 onRefresh={loadAppointments}
+                showToast={showToast}
               />
-            ) : (
+            ) : viewMode === 'week' ? (
               <WeekView
                 weekDays={weekDays}
                 groupedAppointments={groupedAppointments}
                 getStatusColor={getStatusColor}
                 getStatusLabel={getStatusLabel}
                 onRefresh={loadAppointments}
+                showToast={showToast}
+              />
+            ) : (
+              <MonthView
+                currentDate={currentDate}
+                appointments={filteredAppointments}
+                onDayClick={handleMonthDayClick}
               />
             )}
           </div>
@@ -406,14 +463,125 @@ export default function Agenda() {
   );
 }
 
+// ==================== MonthView ====================
+
+interface MonthViewProps {
+  currentDate: Date;
+  appointments: Appointment[];
+  onDayClick: (day: Date) => void;
+}
+
+function MonthView({ currentDate, appointments, onDayClick }: MonthViewProps) {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDayOfMonth = new Date(year, month, 1);
+  const lastDayOfMonth = new Date(year, month + 1, 0);
+  const startDayOfWeek = firstDayOfMonth.getDay(); // 0=Sun
+  const totalDays = lastDayOfMonth.getDate();
+
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Group appointments by date
+  const countsByDate: Record<string, number> = {};
+  for (const apt of appointments) {
+    countsByDate[apt.appointment_date] = (countsByDate[apt.appointment_date] || 0) + 1;
+  }
+
+  // Build grid cells
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startDayOfWeek; i++) {
+    cells.push(null);
+  }
+  for (let d = 1; d <= totalDays; d++) {
+    cells.push(new Date(year, month, d));
+  }
+  // Fill remaining cells to complete the last row
+  while (cells.length % 7 !== 0) {
+    cells.push(null);
+  }
+
+  const weekDayHeaders = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {weekDayHeaders.map((day) => (
+          <div key={day} className="text-center text-xs font-semibold text-text-muted py-2">
+            {day}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {cells.map((date, idx) => {
+          if (!date) {
+            return <div key={`empty-${idx}`} className="aspect-square" />;
+          }
+          const dateStr = date.toISOString().split('T')[0];
+          const count = countsByDate[dateStr] || 0;
+          const isToday = dateStr === todayStr;
+
+          return (
+            <button
+              key={dateStr}
+              onClick={() => onDayClick(date)}
+              className={`aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-colors hover:bg-champagne-nuvem border ${
+                isToday
+                  ? 'border-primary bg-primary/5 font-bold'
+                  : 'border-transparent'
+              }`}
+            >
+              <span className={isToday ? 'text-primary' : 'text-text'}>{date.getDate()}</span>
+              {count > 0 && (
+                <span
+                  className={`text-[10px] font-semibold px-1.5 rounded-full ${
+                    count >= 5
+                      ? 'bg-red-100 text-red-700'
+                      : count >= 3
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-green-100 text-green-700'
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ==================== DayView ====================
+
 interface DayViewProps {
   appointments: Appointment[];
   getStatusColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
   onRefresh: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
-function DayView({ appointments, getStatusColor, getStatusLabel, onRefresh }: DayViewProps) {
+function DayView({ appointments, getStatusColor, getStatusLabel, onRefresh, showToast }: DayViewProps) {
+  // Find the next upcoming appointment
+  const now = new Date();
+  const nowTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const todayStr = now.toISOString().split('T')[0];
+
+  const nextAppointmentId = useMemo(() => {
+    const upcoming = appointments.filter(
+      (apt) =>
+        apt.appointment_date === todayStr &&
+        apt.appointment_time >= nowTimeStr &&
+        (apt.status === 'scheduled' || apt.status === 'confirmed')
+    );
+    if (upcoming.length > 0) {
+      // Already sorted by time from query
+      return upcoming[0].id;
+    }
+    return null;
+  }, [appointments, todayStr, nowTimeStr]);
+
   if (appointments.length === 0) {
     return (
       <div className="text-center py-12">
@@ -431,11 +599,15 @@ function DayView({ appointments, getStatusColor, getStatusLabel, onRefresh }: Da
           getStatusColor={getStatusColor}
           getStatusLabel={getStatusLabel}
           onRefresh={onRefresh}
+          showToast={showToast}
+          isNext={apt.id === nextAppointmentId}
         />
       ))}
     </div>
   );
 }
+
+// ==================== WeekView ====================
 
 interface WeekViewProps {
   weekDays: Date[];
@@ -443,84 +615,116 @@ interface WeekViewProps {
   getStatusColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
   onRefresh: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
-function WeekView({ weekDays, groupedAppointments, getStatusColor, getStatusLabel }: WeekViewProps) {
+function WeekView({ weekDays, groupedAppointments, getStatusColor, getStatusLabel, onRefresh, showToast }: WeekViewProps) {
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
-      {weekDays.map((day) => {
-        const dateStr = day.toISOString().split('T')[0];
-        const dayAppointments = groupedAppointments[dateStr] || [];
-        const isToday = dateStr === new Date().toISOString().split('T')[0];
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
+        {weekDays.map((day) => {
+          const dateStr = day.toISOString().split('T')[0];
+          const dayAppointments = groupedAppointments[dateStr] || [];
+          const isToday = dateStr === new Date().toISOString().split('T')[0];
 
-        return (
-          <div
-            key={dateStr}
-            className={`bg-champagne-nuvem rounded-lg p-4 border ${
-              isToday ? 'border-primary' : 'border-accent/20'
-            }`}
-          >
-            <div className="mb-3">
-              <div
-                className={`text-sm font-medium ${
-                  isToday ? 'text-primary' : 'text-text-muted'
-                }`}
-              >
-                {day.toLocaleDateString('pt-BR', { weekday: 'short' })}
+          return (
+            <div
+              key={dateStr}
+              className={`bg-champagne-nuvem rounded-lg p-4 border ${
+                isToday ? 'border-primary' : 'border-accent/20'
+              }`}
+            >
+              <div className="mb-3">
+                <div
+                  className={`text-sm font-medium ${
+                    isToday ? 'text-primary' : 'text-text-muted'
+                  }`}
+                >
+                  {day.toLocaleDateString('pt-BR', { weekday: 'short' })}
+                </div>
+                <div
+                  className={`text-lg font-semibold ${
+                    isToday ? 'text-primary' : 'text-text'
+                  }`}
+                >
+                  {day.getDate()}
+                </div>
               </div>
-              <div
-                className={`text-lg font-semibold ${
-                  isToday ? 'text-primary' : 'text-text'
-                }`}
-              >
-                {day.getDate()}
-              </div>
+
+              {dayAppointments.length === 0 ? (
+                <p className="text-xs text-text-muted">Sem agendamentos</p>
+              ) : (
+                <div className="space-y-2">
+                  {dayAppointments.map((apt) => (
+                    <div
+                      key={apt.id}
+                      onClick={() => setSelectedAppointment(apt)}
+                      className="bg-background rounded-lg p-2 border border-accent/20 text-xs cursor-pointer hover:shadow-soft transition-all active:scale-[0.98]"
+                    >
+                      <div className="font-medium text-text truncate">
+                        {apt.appointment_time.substring(0, 5)}
+                      </div>
+                      <div className="text-text-muted truncate">
+                        {apt.patient?.full_name}
+                      </div>
+                      <div className={`inline-block px-2 py-0.5 rounded-full text-xs mt-1 border ${getStatusColor(apt.status)}`}>
+                        {getStatusLabel(apt.status)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+          );
+        })}
+      </div>
 
-            {dayAppointments.length === 0 ? (
-              <p className="text-xs text-text-muted">Sem agendamentos</p>
-            ) : (
-              <div className="space-y-2">
-                {dayAppointments.map((apt) => (
-                  <div
-                    key={apt.id}
-                    className="bg-background rounded-lg p-2 border border-accent/20 text-xs"
-                  >
-                    <div className="font-medium text-text truncate">
-                      {apt.appointment_time.substring(0, 5)}
-                    </div>
-                    <div className="text-text-muted truncate">
-                      {apt.patient?.full_name}
-                    </div>
-                    <div className={`inline-block px-2 py-0.5 rounded-full text-xs mt-1 border ${getStatusColor(apt.status)}`}>
-                      {getStatusLabel(apt.status)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+      {selectedAppointment && (
+        <BottomSheet
+          isOpen={!!selectedAppointment}
+          onClose={() => setSelectedAppointment(null)}
+          title="Detalhes do Agendamento"
+        >
+          <AppointmentDetailsContent
+            appointment={selectedAppointment}
+            onClose={() => setSelectedAppointment(null)}
+            onRefresh={() => {
+              setSelectedAppointment(null);
+              onRefresh();
+            }}
+            getStatusColor={getStatusColor}
+            getStatusLabel={getStatusLabel}
+            showToast={showToast}
+          />
+        </BottomSheet>
+      )}
+    </>
   );
 }
+
+// ==================== AppointmentCard ====================
 
 interface AppointmentCardProps {
   appointment: Appointment;
   getStatusColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
   onRefresh: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+  isNext?: boolean;
 }
 
-function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefresh }: AppointmentCardProps) {
+function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefresh, showToast, isNext }: AppointmentCardProps) {
   const [showDetails, setShowDetails] = useState(false);
 
   return (
     <>
       <div
         onClick={() => setShowDetails(true)}
-        className="bg-champagne-nuvem rounded-xl p-5 border border-accent/20 hover:shadow-soft transition-all cursor-pointer active:scale-[0.98] min-h-[80px] md:min-h-[72px]"
+        className={`bg-champagne-nuvem rounded-xl p-5 border hover:shadow-soft transition-all cursor-pointer active:scale-[0.98] min-h-[80px] md:min-h-[72px] ${
+          isNext ? 'border-primary border-2 ring-2 ring-primary/20' : 'border-accent/20'
+        }`}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
@@ -532,6 +736,11 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
               <span className={`px-3 py-1.5 rounded-full text-xs font-semibold border whitespace-nowrap ${getStatusColor(appointment.status)}`}>
                 {getStatusLabel(appointment.status)}
               </span>
+              {isNext && (
+                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-primary text-white whitespace-nowrap">
+                  PRÓXIMO
+                </span>
+              )}
             </div>
             <h4 className="text-text font-semibold text-base mb-1.5 truncate">{appointment.patient?.full_name}</h4>
             <p className="text-text-muted text-sm mb-1 truncate">{appointment.procedure?.name}</p>
@@ -555,11 +764,14 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
           onRefresh={onRefresh}
           getStatusColor={getStatusColor}
           getStatusLabel={getStatusLabel}
+          showToast={showToast}
         />
       </BottomSheet>
     </>
   );
 }
+
+// ==================== AppointmentDetailsContent ====================
 
 interface AppointmentDetailsContentProps {
   appointment: Appointment;
@@ -567,6 +779,7 @@ interface AppointmentDetailsContentProps {
   onRefresh: () => void;
   getStatusColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
 function AppointmentDetailsContent({
@@ -575,11 +788,13 @@ function AppointmentDetailsContent({
   onRefresh,
   getStatusColor,
   getStatusLabel,
+  showToast,
 }: AppointmentDetailsContentProps) {
   const [updating, setUpdating] = useState(false);
   const [showCancelReason, setShowCancelReason] = useState(false);
   const [cancellationReason, setCancellationReason] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
 
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
     if (newStatus === 'cancelled' && !showCancelReason) {
@@ -621,6 +836,21 @@ function AppointmentDetailsContent({
     onClose();
   }
 
+  if (showEditForm) {
+    return (
+      <EditAppointmentForm
+        appointment={appointment}
+        onClose={() => setShowEditForm(false)}
+        onSuccess={() => {
+          setShowEditForm(false);
+          onRefresh();
+          onClose();
+        }}
+        showToast={showToast}
+      />
+    );
+  }
+
   return (
     <div>
 
@@ -639,6 +869,23 @@ function AppointmentDetailsContent({
             <p className="text-text font-medium">{appointment.patient?.full_name}</p>
           </div>
 
+          {appointment.patient?.phone && (
+            <div>
+              <label className="text-sm text-text-muted">Telefone</label>
+              <div className="flex items-center gap-2 mt-1">
+                <a
+                  href={formatWhatsAppUrl(appointment.patient.phone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-green-600 hover:text-green-700 font-medium transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  {appointment.patient.phone}
+                </a>
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="text-sm text-text-muted">Procedimento</label>
             <p className="text-text font-medium">{appointment.procedure?.name}</p>
@@ -647,7 +894,7 @@ function AppointmentDetailsContent({
           <div>
             <label className="text-sm text-text-muted">Data e Hora</label>
             <p className="text-text font-medium">
-              {new Date(appointment.appointment_date).toLocaleDateString('pt-BR')} às{' '}
+              {new Date(appointment.appointment_date + 'T12:00:00').toLocaleDateString('pt-BR')} às{' '}
               {appointment.appointment_time.substring(0, 5)}
             </p>
           </div>
@@ -661,7 +908,7 @@ function AppointmentDetailsContent({
 
           {appointment.downpayment_amount && appointment.downpayment_amount > 0 && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <label className="text-sm text-green-800 font-medium">💰 Calção Pago</label>
+              <label className="text-sm text-green-800 font-medium">Calção Pago</label>
               <p className="text-green-700 font-bold text-lg mt-1">
                 R$ {appointment.downpayment_amount.toFixed(2)}
               </p>
@@ -722,8 +969,17 @@ function AppointmentDetailsContent({
 
           {!showCancelReason && (
             <div className="pt-4 border-t border-accent/20">
-              <label className="text-sm font-medium text-text mb-3 block">Alterar Status</label>
+              <label className="text-sm font-medium text-text mb-3 block">Ações</label>
               <div className="grid grid-cols-2 gap-3">
+                {(appointment.status === 'scheduled' || appointment.status === 'confirmed') && (
+                  <button
+                    onClick={() => setShowEditForm(true)}
+                    className="btn-touch bg-accent hover:bg-accent/80 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                  >
+                    <CalendarClock className="w-4 h-4" />
+                    Remarcar
+                  </button>
+                )}
                 {appointment.status !== 'confirmed' && appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
                   <button
                     onClick={() => updateStatus('confirmed')}
@@ -773,6 +1029,503 @@ function AppointmentDetailsContent({
     </div>
   );
 }
+
+// ==================== TimeSlotPicker ====================
+
+interface TimeSlotPickerProps {
+  value: string;
+  onChange: (time: string) => void;
+  professionalId: string;
+  date: string;
+  excludeAppointmentId?: string;
+  disabled?: boolean;
+}
+
+interface OccupiedSlot {
+  patientName: string;
+}
+
+function TimeSlotPicker({ value, onChange, professionalId, date, excludeAppointmentId, disabled }: TimeSlotPickerProps) {
+  const [occupiedSlots, setOccupiedSlots] = useState<Record<string, OccupiedSlot>>({});
+  const [loadingSlots, setLoadingSlots] = useState(false);
+
+  useEffect(() => {
+    if (professionalId && date) {
+      loadDayAppointments();
+    }
+  }, [professionalId, date]);
+
+  async function loadDayAppointments() {
+    setLoadingSlots(true);
+    try {
+      let query = supabase
+        .from('appointments')
+        .select('id, appointment_time, patient:patients(full_name), procedure:procedures(duration_minutes)')
+        .eq('professional_id', professionalId)
+        .eq('appointment_date', date)
+        .in('status', ['scheduled', 'confirmed'])
+        .order('appointment_time');
+
+      if (excludeAppointmentId) {
+        query = query.neq('id', excludeAppointmentId);
+      }
+
+      const { data: appointments, error } = await query;
+      if (error) throw error;
+
+      const occupied: Record<string, OccupiedSlot> = {};
+      for (const apt of appointments || []) {
+        const patient = apt.patient as { full_name: string } | null;
+        const procedure = apt.procedure as { duration_minutes: number } | null;
+        const startTime = apt.appointment_time.substring(0, 5);
+        const duration = procedure?.duration_minutes || 30;
+        const patientName = patient?.full_name || '';
+
+        // Mark all 15-min slots within the duration as occupied
+        const [startH, startM] = startTime.split(':').map(Number);
+        const startMinutes = startH * 60 + startM;
+        for (let m = startMinutes; m < startMinutes + duration; m += 15) {
+          const h = Math.floor(m / 60);
+          const min = m % 60;
+          const slotKey = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+          occupied[slotKey] = { patientName };
+        }
+      }
+      setOccupiedSlots(occupied);
+    } catch (error) {
+      console.error('Error loading day appointments for slots:', error);
+    } finally {
+      setLoadingSlots(false);
+    }
+  }
+
+  const periods = useMemo(() => {
+    const slots: { time: string; period: string }[] = [];
+    for (let h = 0; h < 24; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        const period = h < 6 ? 'Madrugada' : h < 12 ? 'Manhã' : h < 18 ? 'Tarde' : 'Noite';
+        slots.push({ time, period });
+      }
+    }
+
+    const grouped: { name: string; slots: string[] }[] = [];
+    let current: { name: string; slots: string[] } | null = null;
+    for (const slot of slots) {
+      if (!current || current.name !== slot.period) {
+        current = { name: slot.period, slots: [] };
+        grouped.push(current);
+      }
+      current.slots.push(slot.time);
+    }
+    return grouped;
+  }, []);
+
+  const defaultOpen = { 'Madrugada': false, 'Manhã': true, 'Tarde': true, 'Noite': false };
+  const [openPeriods, setOpenPeriods] = useState<Record<string, boolean>>(defaultOpen);
+
+  function togglePeriod(name: string) {
+    setOpenPeriods((prev) => ({ ...prev, [name]: !prev[name] }));
+  }
+
+  if (loadingSlots) {
+    return (
+      <div className="flex items-center justify-center py-6">
+        <Loader2 className="w-5 h-5 text-primary animate-spin" />
+        <span className="ml-2 text-sm text-text-muted">Carregando horários...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {periods.map((period) => {
+        const isOpen = openPeriods[period.name] ?? true;
+        const occupiedCount = period.slots.filter((t) => occupiedSlots[t]).length;
+
+        return (
+          <div key={period.name} className="border border-accent/20 rounded-xl overflow-hidden">
+            <button
+              type="button"
+              onClick={() => togglePeriod(period.name)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-champagne-nuvem hover:bg-champagne-nuvem/80 transition-colors"
+            >
+              <span className="text-sm font-semibold text-text">{period.name}</span>
+              <div className="flex items-center gap-2">
+                {occupiedCount > 0 && (
+                  <span className="text-[10px] text-text-muted">{occupiedCount} ocupado{occupiedCount > 1 ? 's' : ''}</span>
+                )}
+                <ChevronDown className={`w-4 h-4 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </div>
+            </button>
+            {isOpen && (
+              <div className="grid grid-cols-4 gap-2 p-3">
+                {period.slots.map((time) => {
+                  const occupied = occupiedSlots[time];
+                  const isSelected = value === time;
+
+                  if (occupied) {
+                    return (
+                      <div
+                        key={time}
+                        className="p-2 rounded-lg border border-gray-200 bg-gray-100 text-center cursor-not-allowed opacity-60"
+                      >
+                        <p className="text-sm font-medium text-gray-400 line-through">{time}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{occupied.patientName}</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={time}
+                      type="button"
+                      onClick={() => onChange(time)}
+                      disabled={disabled}
+                      className={`p-2 rounded-lg border-2 transition-all text-center ${
+                        isSelected
+                          ? 'border-primary bg-primary/10'
+                          : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                      }`}
+                    >
+                      <p className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-text'}`}>{time}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ==================== EditAppointmentForm ====================
+
+interface EditAppointmentFormProps {
+  appointment: Appointment;
+  onClose: () => void;
+  onSuccess: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+}
+
+function EditAppointmentForm({
+  appointment,
+  onClose,
+  onSuccess,
+  showToast,
+}: EditAppointmentFormProps) {
+  const { isSuperAdmin } = useAuth();
+  const [patientId, setPatientId] = useState(appointment.patient_id);
+  const [procedureId, setProcedureId] = useState(appointment.procedure_id);
+  const [professionalId, setProfessionalId] = useState(appointment.professional_id);
+  const [appointmentDate, setAppointmentDate] = useState(appointment.appointment_date);
+  const [appointmentTime, setAppointmentTime] = useState(appointment.appointment_time.substring(0, 5));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [conflict, setConflict] = useState(false);
+
+  const [procedures, setProcedures] = useState<Procedure[]>([]);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      loadProfessionals();
+    }
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (professionalId) {
+      loadProcedures(professionalId);
+    }
+  }, [professionalId]);
+
+  useEffect(() => {
+    if (patientId && procedureId && professionalId && appointmentDate && appointmentTime) {
+      checkConflict();
+    }
+  }, [patientId, procedureId, professionalId, appointmentDate, appointmentTime]);
+
+  async function loadProcedures(profId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('professional_procedures')
+        .select(`
+          procedure_id,
+          procedures:procedure_id (
+            id,
+            name,
+            duration_minutes,
+            default_price
+          )
+        `)
+        .eq('professional_id', profId);
+
+      if (error) throw error;
+
+      const proceduresList = data
+        ?.map((item: { procedures: Procedure | null }) => item.procedures)
+        .filter((proc: Procedure | null): proc is Procedure => proc !== null) || [];
+
+      setProcedures(proceduresList);
+    } catch (error) {
+      console.error('Error loading procedures:', error);
+      setProcedures([]);
+    }
+  }
+
+  async function loadProfessionals() {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .eq('is_active', true)
+        .order('full_name');
+
+      if (error) throw error;
+      setProfessionals(data || []);
+    } catch (error) {
+      console.error('Error loading professionals:', error);
+    }
+  }
+
+  async function checkConflict() {
+    try {
+      const { data, error } = await supabase.rpc('check_appointment_conflict', {
+        p_professional_id: professionalId,
+        p_appointment_date: appointmentDate,
+        p_appointment_time: appointmentTime,
+        p_procedure_id: procedureId,
+        p_appointment_id: appointment.id,
+      });
+
+      if (error) throw error;
+      setConflict(data === true);
+    } catch (error) {
+      console.error('Error checking conflict:', error);
+      setConflict(false);
+    }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    const validation = validateAppointmentData({
+      patientId,
+      procedureId,
+      professionalId,
+      appointmentDate,
+      appointmentTime,
+    });
+
+    if (!validation.isValid) {
+      const firstError = validation.errors[0];
+      showToast(firstError.type, firstError.title, firstError.description);
+      setError(firstError.title);
+      return;
+    }
+
+    if (conflict) {
+      showToast('error', 'Conflito de horário', 'Já existe um agendamento para este profissional neste horário.');
+      setError('Conflito de horário');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const { error: updateError } = await supabase
+        .from('appointments')
+        .update({
+          patient_id: patientId,
+          procedure_id: procedureId,
+          professional_id: professionalId,
+          appointment_date: appointmentDate,
+          appointment_time: appointmentTime,
+        })
+        .eq('id', appointment.id);
+
+      if (updateError) throw updateError;
+
+      showToast('success', 'Agendamento remarcado!', 'Os dados do agendamento foram atualizados com sucesso.');
+      onSuccess();
+    } catch (error) {
+      const appError = parseSupabaseError(error);
+      showToast(appError.type, appError.title, appError.description);
+      setError(appError.title);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+        Editando agendamento de <strong>{appointment.patient?.full_name}</strong>
+      </div>
+
+      {/* Professional (Super Admin only) */}
+      {isSuperAdmin && (
+        <div>
+          <label className="block text-sm font-medium text-text mb-2">
+            Profissional *
+          </label>
+          <select
+            value={professionalId}
+            onChange={(e) => {
+              setProfessionalId(e.target.value);
+              setProcedureId('');
+            }}
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            required
+            disabled={loading}
+          >
+            <option value="">Selecione um profissional</option>
+            {professionals.map((prof) => (
+              <option key={prof.id} value={prof.id}>
+                {prof.full_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Patient Autocomplete */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">
+          Paciente *
+        </label>
+        <PatientAutocomplete
+          value={patientId}
+          onChange={setPatientId}
+          professionalId={professionalId}
+          placeholder="Digite o nome do paciente..."
+        />
+      </div>
+
+      {/* Procedure Grid */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-3">
+          Procedimento *
+        </label>
+        {!professionalId ? (
+          <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
+            {isSuperAdmin
+              ? 'Selecione um profissional primeiro para ver os procedimentos disponíveis.'
+              : 'Carregando procedimentos...'}
+          </div>
+        ) : procedures.length === 0 ? (
+          <div className="bg-yellow-50 border-2 border-yellow-200 text-yellow-700 px-4 py-3 rounded-xl text-sm">
+            <p className="font-semibold mb-1">Nenhum procedimento associado</p>
+            <p className="text-xs">Este profissional ainda não tem procedimentos configurados.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {procedures.map((procedure) => (
+              <button
+                key={procedure.id}
+                type="button"
+                onClick={() => setProcedureId(procedure.id)}
+                className={`p-4 rounded-xl border-2 transition-all text-left ${
+                  procedureId === procedure.id
+                    ? 'border-primary bg-primary/10'
+                    : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                }`}
+              >
+                <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
+                  {procedure.name}
+                </p>
+                <p className="text-xs text-text-muted">
+                  {procedure.duration_minutes} min
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Data */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">Data *</label>
+        <input
+          type="date"
+          value={appointmentDate}
+          onChange={(e) => setAppointmentDate(e.target.value)}
+          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+          required
+          disabled={loading}
+        />
+      </div>
+
+      {/* Horário - Grid Visual */}
+      {professionalId && appointmentDate ? (
+        <div>
+          <label className="block text-sm font-medium text-text mb-3">Horário *</label>
+          <TimeSlotPicker
+            value={appointmentTime}
+            onChange={setAppointmentTime}
+            professionalId={professionalId}
+            date={appointmentDate}
+            excludeAppointmentId={appointment.id}
+            disabled={loading}
+          />
+        </div>
+      ) : (
+        <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
+          Selecione um profissional e uma data para ver os horários disponíveis.
+        </div>
+      )}
+
+      {/* Conflict Warning */}
+      {conflict && (
+        <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-3">
+          <AlertCircle className="w-6 h-6 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold mb-1">Conflito de horário!</p>
+            <p className="text-xs">Já existe um agendamento para este profissional neste horário.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border-2 border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex gap-3 pt-2">
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex-1 btn-touch border border-accent/30 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
+          disabled={loading}
+        >
+          Voltar
+        </button>
+        <button
+          type="submit"
+          className="flex-1 btn-touch bg-primary hover:bg-primary-hover text-white rounded-xl transition-colors disabled:opacity-50 font-semibold"
+          disabled={loading || conflict || !patientId || !procedureId}
+        >
+          {loading ? (
+            <span className="flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Salvando...
+            </span>
+          ) : (
+            'Salvar Alterações'
+          )}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ==================== CreateAppointmentForm ====================
 
 interface CreateAppointmentFormProps {
   defaultDate: string;
@@ -855,12 +1608,12 @@ function CreateAppointmentForm({
         .eq('professional_id', profId);
 
       if (error) throw error;
-      
+
       // Extrair os dados dos procedimentos da resposta
       const proceduresList = data
         ?.map((item: { procedures: Procedure | null }) => item.procedures)
         .filter((proc: Procedure | null): proc is Procedure => proc !== null) || [];
-      
+
       setProcedures(proceduresList);
     } catch (error) {
       console.error('Error loading procedures:', error);
@@ -998,7 +1751,7 @@ function CreateAppointmentForm({
               closing_id: closing.id,
               appointment_id: newAppointment.id,
               amount: downpaymentAmount,
-              payment_method: downpaymentMethod === 'dinheiro' ? 'Dinheiro' : 
+              payment_method: downpaymentMethod === 'dinheiro' ? 'Dinheiro' :
                               downpaymentMethod === 'credito' ? 'Cartão de Crédito' :
                               downpaymentMethod === 'debito' ? 'Cartão de Débito' : 'PIX',
               transaction_type: 'downpayment',
@@ -1013,8 +1766,8 @@ function CreateAppointmentForm({
       }
 
       // Success toast
-      showToast('success', 'Agendamento criado!', 
-        hasDownpayment 
+      showToast('success', 'Agendamento criado!',
+        hasDownpayment
           ? `O agendamento foi salvo e o calção de R$ ${downpaymentAmount.toFixed(2)} foi registrado.`
           : 'O agendamento foi salvo com sucesso.'
       );
@@ -1074,7 +1827,7 @@ function CreateAppointmentForm({
         </label>
         {!professionalId ? (
           <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
-            {isSuperAdmin 
+            {isSuperAdmin
               ? 'Selecione um profissional primeiro para ver os procedimentos disponíveis.'
               : 'Carregando procedimentos...'}
           </div>
@@ -1108,32 +1861,36 @@ function CreateAppointmentForm({
         )}
       </div>
 
-      {/* Date and Time */}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm font-medium text-text mb-2">Data *</label>
-          <input
-            type="date"
-            value={appointmentDate}
-            onChange={(e) => setAppointmentDate(e.target.value)}
-            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
-            required
-            disabled={loading}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-text mb-2">Horário *</label>
-          <input
-            type="time"
-            value={appointmentTime}
-            onChange={(e) => setAppointmentTime(e.target.value)}
-            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
-            required
-            disabled={loading}
-          />
-        </div>
+      {/* Data */}
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">Data *</label>
+        <input
+          type="date"
+          value={appointmentDate}
+          onChange={(e) => setAppointmentDate(e.target.value)}
+          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+          required
+          disabled={loading}
+        />
       </div>
+
+      {/* Horário - Grid Visual */}
+      {professionalId && appointmentDate ? (
+        <div>
+          <label className="block text-sm font-medium text-text mb-3">Horário *</label>
+          <TimeSlotPicker
+            value={appointmentTime}
+            onChange={setAppointmentTime}
+            professionalId={professionalId}
+            date={appointmentDate}
+            disabled={loading}
+          />
+        </div>
+      ) : (
+        <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
+          Selecione um profissional e uma data para ver os horários disponíveis.
+        </div>
+      )}
 
       {/* Conflict Warning */}
       {conflict && (
@@ -1165,7 +1922,7 @@ function CreateAppointmentForm({
           {hasDownpayment && (
             <div className="mt-4 space-y-3 bg-green-50 border border-green-200 rounded-lg p-4">
               <p className="text-sm text-green-800 font-medium">
-                💰 Valor total do serviço: R$ {selectedProcedurePrice.toFixed(2)}
+                Valor total do serviço: R$ {selectedProcedurePrice.toFixed(2)}
               </p>
 
               <div>

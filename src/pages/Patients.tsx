@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Loader2, Search, Phone, Mail, FileText } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Mail, FileText, MessageCircle } from 'lucide-react';
+import { formatWhatsAppUrl } from '../lib/whatsapp';
 
 interface Patient {
   id: string;
@@ -112,9 +113,16 @@ export default function Patients() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-text-muted">
-                    <Phone className="w-4 h-4" />
-                    <span className="text-sm">{patient.phone}</span>
+                  <div className="flex items-center gap-2">
+                    <MessageCircle className="w-4 h-4 text-green-600" />
+                    <a
+                      href={formatWhatsAppUrl(patient.phone)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-green-600 hover:text-green-700 font-medium transition-colors"
+                    >
+                      {patient.phone}
+                    </a>
                   </div>
                   {patient.email && (
                     <div className="flex items-center gap-2 text-text-muted">
