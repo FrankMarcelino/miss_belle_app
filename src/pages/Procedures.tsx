@@ -72,8 +72,8 @@ export default function Procedures() {
         )}
       </div>
 
-      <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
-        <div className="p-6 border-b border-accent/20">
+      <div className="bg-background-card rounded-xl border border-accent/10 shadow-card">
+        <div className="p-6 border-b border-accent/10">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
             <input
@@ -81,7 +81,7 @@ export default function Procedures() {
               placeholder="Buscar procedimento..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
+              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
             />
           </div>
         </div>
@@ -97,7 +97,7 @@ export default function Procedures() {
             {filteredProcedures.map((procedure) => (
               <div
                 key={procedure.id}
-                className="bg-champagne-nuvem rounded-lg p-5 border border-accent/20 hover:shadow-soft transition-all"
+                className="bg-white rounded-xl p-5 border border-accent/10 shadow-card hover:shadow-card-hover transition-all"
               >
                 <div className="flex items-start justify-between mb-3">
                   <h3 className="font-semibold text-text text-lg">{procedure.name}</h3>
@@ -180,7 +180,7 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <h2 className="text-xl font-semibold text-text mb-6">Novo Procedimento</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -192,7 +192,7 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               placeholder="Ex: Limpeza de Pele"
               required
               disabled={loading}
@@ -207,7 +207,7 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
               type="number"
               value={durationMinutes}
               onChange={(e) => setDurationMinutes(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               min="1"
               required
               disabled={loading}
@@ -223,7 +223,7 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
               step="0.01"
               value={defaultPrice}
               onChange={(e) => setDefaultPrice(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               placeholder="0.00"
               min="0"
               required
@@ -241,7 +241,7 @@ function CreateProcedureModal({ onClose, onSuccess }: CreateProcedureModalProps)
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               disabled={loading}
             >
               Cancelar

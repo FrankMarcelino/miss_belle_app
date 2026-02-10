@@ -76,8 +76,8 @@ export default function Patients() {
         </button>
       </div>
 
-      <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
-        <div className="p-6 border-b border-accent/20">
+      <div className="bg-background-card rounded-xl border border-accent/10 shadow-card">
+        <div className="p-6 border-b border-accent/10">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
             <input
@@ -85,7 +85,7 @@ export default function Patients() {
               placeholder="Buscar por nome, telefone ou e-mail..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
+              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
             />
           </div>
         </div>
@@ -101,7 +101,7 @@ export default function Patients() {
             {filteredPatients.map((patient) => (
               <div
                 key={patient.id}
-                className="bg-champagne-nuvem rounded-lg p-5 border border-accent/20 hover:shadow-soft transition-all"
+                className="bg-white rounded-xl p-5 border border-accent/10 shadow-card hover:shadow-card-hover transition-all"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
@@ -131,7 +131,7 @@ export default function Patients() {
                     </div>
                   )}
                   {patient.notes && (
-                    <div className="flex items-start gap-2 text-text-muted mt-3 pt-3 border-t border-accent/20">
+                    <div className="flex items-start gap-2 text-text-muted mt-3 pt-3 border-t border-accent/10">
                       <FileText className="w-4 h-4 mt-0.5" />
                       <span className="text-sm">{patient.notes}</span>
                     </div>
@@ -199,7 +199,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <h2 className="text-xl font-semibold text-text mb-6">Novo Paciente</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -211,7 +211,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
             />
@@ -225,7 +225,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               placeholder="(00) 00000-0000"
               required
               disabled={loading}
@@ -240,7 +240,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               disabled={loading}
             />
           </div>
@@ -252,7 +252,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
               rows={3}
               disabled={loading}
             />
@@ -268,7 +268,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               disabled={loading}
             >
               Cancelar

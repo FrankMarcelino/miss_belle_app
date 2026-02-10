@@ -235,8 +235,8 @@ export default function CashRegister() {
         )}
       </div>
 
-      <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
-        <div className="p-6 border-b border-accent/20 space-y-4">
+      <div className="bg-background-card rounded-xl border border-accent/10 shadow-card">
+        <div className="p-6 border-b border-accent/10 space-y-4">
           <div className="flex flex-wrap gap-4">
             {isSuperAdmin && (
               <div className="flex-1 min-w-[200px]">
@@ -246,7 +246,7 @@ export default function CashRegister() {
                 <select
                   value={selectedProfessional}
                   onChange={(e) => setSelectedProfessional(e.target.value)}
-                  className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+                  className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
                 >
                   <option value="">Todos os profissionais</option>
                   {professionals.map((prof) => (
@@ -266,7 +266,7 @@ export default function CashRegister() {
                 type="date"
                 value={dateFilter}
                 onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               />
             </div>
 
@@ -288,7 +288,7 @@ export default function CashRegister() {
 
         {/* Seção de Atendimentos Pendentes */}
         {pendingAppointments.length > 0 && (
-          <div className="border-b border-accent/20 p-6">
+          <div className="border-b border-accent/10 p-6">
             <h2 className="text-lg font-semibold text-text mb-4 flex items-center gap-2">
               <Clock className="w-5 h-5" />
               Atendimentos Pendentes de Pagamento
@@ -302,7 +302,7 @@ export default function CashRegister() {
                 {pendingAppointments.map((appointment) => (
                   <div
                     key={appointment.id}
-                    className="bg-champagne-nuvem rounded-lg p-4 border border-accent/20 hover:shadow-soft transition-all"
+                    className="bg-white rounded-xl p-4 border shadow-card border-accent/10 hover:shadow-card-hover transition-all"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -361,10 +361,10 @@ export default function CashRegister() {
                 <div
                   key={closing.id}
                   onClick={() => openClosing(closing)}
-                  className={`bg-champagne-nuvem rounded-lg p-5 border cursor-pointer hover:shadow-soft transition-all ${
+                  className={`bg-white rounded-xl p-5 border shadow-card cursor-pointer hover:shadow-card-hover transition-all ${
                     closing.is_finalized
                       ? 'border-green-200 bg-green-50'
-                      : 'border-accent/20'
+                      : 'border-accent/10'
                   }`}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -380,7 +380,7 @@ export default function CashRegister() {
                         Finalizado
                       </span>
                     ) : (
-                      <span className="px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded-full border border-accent/20">
+                      <span className="px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded-full border border-accent/10">
                         Em Aberto
                       </span>
                     )}
@@ -538,7 +538,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-3xl w-full p-6 border border-accent/20 my-8">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-3xl w-full p-6 border border-accent/10 my-8">
         <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className="text-xl font-semibold text-text">Fechamento de Caixa</h2>
@@ -556,7 +556,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           </button>
         </div>
 
-        <div className="bg-champagne-nuvem rounded-lg p-6 mb-6 border border-accent/20">
+        <div className="bg-champagne-nuvem rounded-lg p-6 mb-6 border border-accent/10">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-text-muted mb-1">Total do Dia</p>
@@ -608,7 +608,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
             {transactions.map((transaction) => (
               <div
                 key={transaction.id}
-                className="bg-champagne-nuvem rounded-lg p-4 border border-accent/20"
+                className="bg-white rounded-xl p-4 border shadow-card border-accent/10"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -616,7 +616,7 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
                       <span className="text-xl font-bold text-text">
                         R$ {transaction.amount.toFixed(2)}
                       </span>
-                      <span className="px-3 py-1 bg-background rounded-full text-xs font-medium text-text border border-accent/20">
+                      <span className="px-3 py-1 bg-background rounded-full text-xs font-medium text-text border border-accent/10">
                         {transaction.payment_method}
                       </span>
                     </div>
@@ -732,7 +732,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-[60]">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <div className="flex items-start justify-between mb-6">
           <h3 className="text-lg font-semibold text-text">Nova Transação</h3>
           <button onClick={onClose} className="p-1 hover:bg-champagne-nuvem rounded-lg transition-colors">
@@ -748,7 +748,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               placeholder="0.00"
               required
               disabled={loading}
@@ -761,7 +761,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             <select
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               disabled={loading}
             >
               <option>Dinheiro</option>
@@ -780,7 +780,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
               <select
                 value={appointmentId}
                 onChange={(e) => setAppointmentId(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
                 disabled={loading}
               >
                 <option value="">Não vincular</option>
@@ -798,7 +798,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
               rows={2}
               disabled={loading}
             />
@@ -808,7 +808,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               disabled={loading}
             >
               Cancelar

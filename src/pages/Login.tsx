@@ -52,7 +52,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-background to-champagne-nuvem flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
@@ -62,7 +62,7 @@ export default function Login() {
           <p className="text-text-muted">Gestão de Clínica Estética</p>
         </div>
 
-        <div className="bg-background-card rounded-2xl shadow-soft-lg p-8 border border-accent/20">
+        <div className="bg-white rounded-2xl shadow-soft-lg p-8 border border-accent/10">
           <h2 className="text-2xl font-semibold text-text mb-6">
             {isSignUp ? 'Criar Conta' : 'Entrar'}
           </h2>
@@ -78,7 +78,7 @@ export default function Login() {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
+                  className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
                   placeholder="Seu nome completo"
                   required
                   disabled={loading}
@@ -95,7 +95,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
                 placeholder="seu@email.com"
                 required
                 disabled={loading}
@@ -111,7 +111,7 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all text-text placeholder-text-muted"
                 placeholder="••••••••"
                 required
                 disabled={loading}

@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  body {
+    @apply font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
 /* ============================================================================
    Animations
    ============================================================================ */
@@ -18,6 +26,28 @@
 
 .animate-slide-down {
   animation: slide-down 0.3s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ============================================================================
@@ -94,7 +124,7 @@
 
   /* Bottom Sheet container */
   .sheet-container {
-    @apply fixed bottom-0 left-0 right-0 bg-background-card rounded-t-3xl shadow-2xl z-50;
+    @apply fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-soft-lg z-50;
     @apply max-h-[90vh] overflow-hidden;
   }
 
@@ -105,10 +135,11 @@
 
   /* Bottom Navigation fixed bar */
   .bottom-nav-bar {
-    @apply fixed bottom-0 left-0 right-0 bg-background-card border-t border-accent/20 z-30;
+    @apply fixed bottom-0 left-0 right-0 z-30;
     @apply flex items-center justify-around;
     @apply h-16 px-2;
     @apply safe-bottom;
+    @apply bg-white/80 backdrop-blur-lg border-t border-accent/10;
   }
 
   /* Bottom Nav item */
@@ -126,7 +157,7 @@
   /* Autocomplete dropdown */
   .autocomplete-list {
     @apply absolute top-full left-0 right-0 mt-1;
-    @apply bg-background-card border border-accent/30 rounded-lg shadow-lg;
+    @apply bg-white border border-accent/15 rounded-xl shadow-soft;
     @apply max-h-64 overflow-y-auto scroll-touch;
     @apply z-50;
   }

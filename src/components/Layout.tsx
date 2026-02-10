@@ -52,12 +52,12 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-background-card border-r border-accent/20 transform transition-transform duration-300 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-accent/10 transform transition-transform duration-300 ease-in-out ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
       >
         <div className="h-full flex flex-col">
-          <div className="p-6 border-b border-accent/20">
+          <div className="p-6 border-b border-accent/10">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
                 <Heart className="w-5 h-5 text-white" fill="white" />
@@ -91,7 +91,7 @@ export default function Layout({ children }: LayoutProps) {
             })}
           </nav>
 
-          <div className="p-4 border-t border-accent/20">
+          <div className="p-4 border-t border-accent/10">
             <button
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="w-full flex items-center gap-3 px-4 py-3 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
@@ -122,7 +122,7 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-40 bg-champagne-nuvem border-b border-accent/20 px-4 lg:px-8 py-4">
+        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg border-b border-accent/10 px-4 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}

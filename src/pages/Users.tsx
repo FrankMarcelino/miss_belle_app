@@ -366,8 +366,8 @@ export default function Users() {
         </button>
       </div>
 
-      <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
-        <div className="p-6 border-b border-accent/20">
+      <div className="bg-background-card rounded-xl border border-accent/10 shadow-card">
+        <div className="p-6 border-b border-accent/10">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
             <input
@@ -375,7 +375,7 @@ export default function Users() {
               placeholder="Buscar por nome ou e-mail..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
+              className="w-full pl-10 pr-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text placeholder-text-muted"
             />
           </div>
         </div>
@@ -385,7 +385,7 @@ export default function Users() {
           <select
             value={filters.status}
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-            className="px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
+            className="px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
           >
             <option value="all">Todos os status</option>
             <option value="active">Ativos</option>
@@ -395,7 +395,7 @@ export default function Users() {
           <select
             value={filters.role}
             onChange={(e) => setFilters({ ...filters, role: e.target.value })}
-            className="px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
+            className="px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-sm"
           >
             <option value="all">Todos os perfis</option>
             <option value="super_admin">Super Admin</option>
@@ -433,7 +433,7 @@ export default function Users() {
             <div className="hidden md:block overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-accent/20">
+                <tr className="border-b border-accent/10">
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">Nome</th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">E-mail</th>
                   <th className="text-left px-6 py-4 text-sm font-semibold text-text">Perfil</th>
@@ -445,7 +445,7 @@ export default function Users() {
               </thead>
               <tbody>
                 {filteredUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-accent/20 last:border-0 hover:bg-champagne-nuvem transition-colors">
+                  <tr key={user.id} className="border-b border-accent/10 last:border-0 hover:bg-champagne-nuvem transition-colors">
                     <td className="px-6 py-4 text-text font-medium">{user.full_name}</td>
                     <td className="px-6 py-4 text-text-muted">{user.email}</td>
                     <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
@@ -759,7 +759,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <h2 className="text-xl font-semibold text-text mb-6">Editar Usuário</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -771,7 +771,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
             />
@@ -785,7 +785,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
             />
@@ -798,7 +798,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as 'super_admin' | 'user')}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               disabled={loading}
             >
               <option value="user">Profissional</option>
@@ -812,7 +812,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
                 type="checkbox"
                 checked={isActive}
                 onChange={(e) => setIsActive(e.target.checked)}
-                className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/15 rounded focus:ring-2 focus:ring-primary"
                 disabled={loading}
               />
               <span className="text-sm font-medium text-text">Usuário ativo</span>
@@ -820,7 +820,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
           </div>
 
           {/* ✨ NOVO: Seção de Reset de Senha */}
-          <div className="border-t border-accent/20 pt-4 mt-4">
+          <div className="border-t border-accent/10 pt-4 mt-4">
             <button
               type="button"
               onClick={() => setShowPasswordReset(!showPasswordReset)}
@@ -858,14 +858,14 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
 
           {/* ✨ NOVO: Gestão de Procedimentos (apenas para profissionais) */}
           {role === 'user' && (
-            <div className="border-t border-accent/20 pt-4 mt-4">
+            <div className="border-t border-accent/10 pt-4 mt-4">
               <label className="block text-sm font-medium text-text mb-2">
                 <div className="flex items-center gap-2">
                   <Scissors className="w-4 h-4" />
                   Procedimentos Associados
                 </div>
               </label>
-              <div className="max-h-48 overflow-y-auto border border-accent/30 rounded-lg bg-champagne-nuvem">
+              <div className="max-h-48 overflow-y-auto border border-accent/15 rounded-lg bg-champagne-nuvem">
                 {loadingProcedures ? (
                   <div className="p-4 text-center">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
@@ -886,7 +886,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
                           type="checkbox"
                           checked={selectedProcedures.includes(proc.id)}
                           onChange={() => toggleProcedure(proc.id)}
-                          className="w-4 h-4 text-primary bg-background border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                          className="w-4 h-4 text-primary bg-background border-accent/15 rounded focus:ring-2 focus:ring-primary"
                           disabled={loading}
                         />
                         <div className="flex-1 min-w-0">
@@ -916,7 +916,7 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               disabled={loading}
             >
               Cancelar
@@ -964,7 +964,7 @@ function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProp
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <h2 className="text-xl font-semibold text-text mb-4">Confirmar Exclusão</h2>
 
         {loading ? (
@@ -1007,7 +1007,7 @@ function DeleteConfirmModal({ user, onClose, onConfirm }: DeleteConfirmModalProp
             <div className="flex gap-3">
               <button
                 onClick={onClose}
-                className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+                className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               >
                 Cancelar
               </button>
@@ -1146,7 +1146,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
 
   return (
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/20">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <h2 className="text-xl font-semibold text-text mb-6">Novo Usuário</h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1158,7 +1158,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
               type="text"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
             />
@@ -1172,7 +1172,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
             />
@@ -1186,7 +1186,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               required
               disabled={loading}
               minLength={6}
@@ -1200,7 +1200,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as 'super_admin' | 'user')}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
               disabled={loading}
             >
               <option value="user">Profissional</option>
@@ -1214,7 +1214,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
               <label className="block text-sm font-medium text-text mb-2">
                 Procedimentos (opcional)
               </label>
-              <div className="max-h-48 overflow-y-auto border border-accent/30 rounded-lg bg-champagne-nuvem">
+              <div className="max-h-48 overflow-y-auto border border-accent/15 rounded-lg bg-champagne-nuvem">
                 {loadingProcedures ? (
                   <div className="p-4 text-center">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" />
@@ -1235,7 +1235,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
                           type="checkbox"
                           checked={selectedProcedures.includes(proc.id)}
                           onChange={() => toggleProcedure(proc.id)}
-                          className="w-4 h-4 text-primary bg-background border-accent/30 rounded focus:ring-2 focus:ring-primary"
+                          className="w-4 h-4 text-primary bg-background border-accent/15 rounded focus:ring-2 focus:ring-primary"
                           disabled={loading}
                         />
                         <div className="flex-1 min-w-0">
@@ -1265,7 +1265,7 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
               disabled={loading}
             >
               Cancelar
@@ -1369,7 +1369,7 @@ function UserCard({ user, stats, onEdit, onToggleStatus, onDelete, formatDate }:
   };
 
   return (
-    <div className="bg-background-card border border-accent/20 rounded-xl p-4 shadow-soft">
+    <div className="bg-background-card border border-accent/10 rounded-xl p-4 shadow-soft">
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1 min-w-0">
@@ -1387,7 +1387,7 @@ function UserCard({ user, stats, onEdit, onToggleStatus, onDelete, formatDate }:
 
       {/* Stats */}
       {stats ? (
-        <div className="flex items-center gap-4 text-sm text-text-muted mb-4 pb-4 border-b border-accent/20">
+        <div className="flex items-center gap-4 text-sm text-text-muted mb-4 pb-4 border-b border-accent/10">
           <div className="flex items-center gap-1" title="Agendamentos">
             <Calendar className="w-4 h-4" />
             <span>{stats.appointmentsCount}</span>
@@ -1402,7 +1402,7 @@ function UserCard({ user, stats, onEdit, onToggleStatus, onDelete, formatDate }:
           </div>
         </div>
       ) : (
-        <div className="mb-4 pb-4 border-b border-accent/20 flex items-center gap-2">
+        <div className="mb-4 pb-4 border-b border-accent/10 flex items-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin text-text-muted" />
           <span className="text-sm text-text-muted">Carregando estatísticas...</span>
         </div>

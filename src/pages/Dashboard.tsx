@@ -262,7 +262,7 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <div className="flex gap-2 bg-background-card rounded-lg p-1 w-fit border border-accent/20">
+      <div className="flex gap-2 bg-white rounded-xl p-1 w-fit border border-accent/10 shadow-card">
         <button
           onClick={() => setPeriod('day')}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -301,10 +301,10 @@ export default function Dashboard() {
           return (
             <div
               key={stat.label}
-              className="bg-background-card rounded-xl p-6 border border-accent/20 shadow-card hover:shadow-soft transition-shadow"
+              className="bg-background-card rounded-xl p-6 border border-accent/10 shadow-card hover:shadow-card-hover transition-shadow"
             >
               <div className="flex items-start justify-between mb-4">
-                <div className={`${stat.color} w-12 h-12 rounded-lg flex items-center justify-center`}>
+                <div className={`${stat.color} w-12 h-12 rounded-xl flex items-center justify-center`}>
                   <Icon className="w-6 h-6 text-white" />
                 </div>
               </div>
@@ -316,7 +316,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-background-card rounded-xl p-6 border border-accent/20 shadow-card">
+        <div className="bg-background-card rounded-xl p-6 border border-accent/10 shadow-card">
           <h3 className="text-lg font-semibold text-text mb-4">
             {isSuperAdmin ? 'Próximos Atendimentos' : 'Sua Agenda do Dia'}
           </h3>
@@ -329,7 +329,7 @@ export default function Dashboard() {
               {upcomingAppointments.map((apt) => (
                 <div
                   key={apt.id}
-                  className="bg-champagne-nuvem rounded-lg p-4 border border-accent/20"
+                  className="bg-champagne-nuvem rounded-lg p-4 border border-accent/10"
                 >
                   <div className="flex items-center gap-3 mb-2">
                     <Clock className="w-4 h-4 text-text-muted" />
@@ -350,7 +350,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="bg-background-card rounded-xl p-6 border border-accent/20 shadow-card">
+        <div className="bg-background-card rounded-xl p-6 border border-accent/10 shadow-card">
           <h3 className="text-lg font-semibold text-text mb-4">
             Procedimentos Mais Atendidos
           </h3>
@@ -363,7 +363,7 @@ export default function Dashboard() {
               {topProcedures.map((proc, index) => (
                 <div
                   key={proc.name}
-                  className="flex items-center justify-between bg-champagne-nuvem rounded-lg p-4 border border-accent/20"
+                  className="flex items-center justify-between bg-champagne-nuvem rounded-lg p-4 border border-accent/10"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white font-bold text-sm">

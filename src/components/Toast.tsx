@@ -21,22 +21,22 @@ export default function Toast({ type, message, description, onClose, duration = 
 
   const styles = {
     success: {
-      container: 'bg-green-50 border-green-200 text-green-800',
+      container: 'bg-white border-green-200 text-green-800',
       icon: CheckCircle,
       iconColor: 'text-green-600',
     },
     error: {
-      container: 'bg-red-50 border-red-200 text-red-800',
+      container: 'bg-white border-red-200 text-red-800',
       icon: XCircle,
       iconColor: 'text-red-600',
     },
     warning: {
-      container: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+      container: 'bg-white border-yellow-300 text-yellow-800',
       icon: AlertTriangle,
       iconColor: 'text-yellow-600',
     },
     info: {
-      container: 'bg-blue-50 border-blue-200 text-blue-800',
+      container: 'bg-white border-blue-200 text-blue-800',
       icon: Info,
       iconColor: 'text-blue-600',
     },
@@ -47,7 +47,7 @@ export default function Toast({ type, message, description, onClose, duration = 
 
   return (
     <div className="fixed top-20 right-4 left-4 md:left-auto md:w-96 z-[100] animate-slide-down">
-      <div className={`${config.container} border-2 rounded-xl shadow-lg p-4 flex items-start gap-3`}>
+      <div className={`${config.container} border rounded-xl shadow-soft backdrop-blur-sm p-4 flex items-start gap-3`}>
         <Icon className={`${config.iconColor} w-6 h-6 flex-shrink-0 mt-0.5`} />
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-sm mb-1">{message}</p>

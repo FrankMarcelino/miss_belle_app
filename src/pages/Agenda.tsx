@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Fragment } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BottomSheet from '../components/mobile/BottomSheet';
@@ -157,7 +157,7 @@ export default function Agenda() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'scheduled':
-        return 'bg-accent/10 text-accent border-accent/20';
+        return 'bg-accent/10 text-accent border-accent/10';
       case 'confirmed':
         return 'bg-primary/10 text-primary border-primary/20';
       case 'completed':
@@ -184,32 +184,30 @@ export default function Agenda() {
     }
   };
 
-  // Filter appointments based on search and status
-  const filteredAppointments = appointments.filter((apt) => {
-    // Status filter
-    if (statusFilter !== 'all' && apt.status !== statusFilter) {
-      return false;
-    }
-
-    // Search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+  // Search-filtered appointments (without status filter, for accurate counters)
+  const searchFilteredAppointments = useMemo(() => {
+    if (!searchQuery.trim()) return appointments;
+    const query = searchQuery.toLowerCase();
+    return appointments.filter((apt) => {
       const patientName = apt.patient?.full_name?.toLowerCase() || '';
       const procedureName = apt.procedure?.name?.toLowerCase() || '';
       return patientName.includes(query) || procedureName.includes(query);
-    }
+    });
+  }, [appointments, searchQuery]);
 
-    return true;
-  });
-
-  // Status counters
+  // Status counters based on search-filtered results
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { scheduled: 0, confirmed: 0, completed: 0, cancelled: 0 };
-    for (const apt of appointments) {
+    for (const apt of searchFilteredAppointments) {
       counts[apt.status] = (counts[apt.status] || 0) + 1;
     }
     return counts;
-  }, [appointments]);
+  }, [searchFilteredAppointments]);
+
+  // Final filtered appointments (search + status)
+  const filteredAppointments = statusFilter === 'all'
+    ? searchFilteredAppointments
+    : searchFilteredAppointments.filter((apt) => apt.status === statusFilter);
 
   const groupedAppointments = viewMode === 'day'
     ? { [currentDate.toISOString().split('T')[0]]: filteredAppointments }
@@ -291,7 +289,7 @@ export default function Agenda() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar por paciente ou procedimento..."
-            className="w-full pl-12 pr-4 py-3 bg-background-card border border-accent/20 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base shadow-soft"
+            className="w-full pl-12 pr-4 py-3 bg-background-card border border-accent/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base shadow-soft"
           />
         </div>
 
@@ -305,7 +303,7 @@ export default function Agenda() {
             { value: 'cancelled', label: 'Cancelados' },
           ].map((filter) => {
             const count = filter.value === 'all'
-              ? appointments.length
+              ? searchFilteredAppointments.length
               : statusCounts[filter.value] || 0;
             return (
               <button
@@ -314,7 +312,7 @@ export default function Agenda() {
                 className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
                   statusFilter === filter.value
                     ? 'bg-primary text-white border-primary'
-                    : 'bg-background-card text-text border-accent/20 hover:bg-champagne-nuvem'
+                    : 'bg-background-card text-text border-accent/10 hover:bg-champagne-nuvem'
                 }`}
               >
                 {filter.label} ({count})
@@ -324,87 +322,92 @@ export default function Agenda() {
         </div>
       </div>
 
-      <div className="bg-background-card rounded-xl border border-accent/20 shadow-card">
-        <div className="p-6 border-b border-accent/20 space-y-4">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex gap-2 bg-champagne-nuvem rounded-lg p-1 border border-accent/20">
-              <button
-                onClick={() => setViewMode('day')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'day'
-                    ? 'bg-primary text-white'
-                    : 'text-text hover:bg-background-card'
-                }`}
-              >
-                Dia
-              </button>
-              <button
-                onClick={() => setViewMode('week')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'week'
-                    ? 'bg-primary text-white'
-                    : 'text-text hover:bg-background-card'
-                }`}
-              >
-                Semana
-              </button>
-              <button
-                onClick={() => setViewMode('month')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'month'
-                    ? 'bg-primary text-white'
-                    : 'text-text hover:bg-background-card'
-                }`}
-              >
-                Mês
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2">
+      <div className="bg-white rounded-xl border border-accent/10 shadow-card">
+        <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-lg rounded-t-xl border-b border-accent/10">
+          <div className="px-4 sm:px-6 py-3 space-y-2">
+            {/* Row 1: Date label with navigation arrows */}
+            <div className="flex items-center justify-center gap-1">
               <button
                 onClick={() => navigateDate('prev')}
-                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors flex-shrink-0"
               >
                 <ChevronLeft className="w-5 h-5 text-text" />
               </button>
-              <button
-                onClick={goToToday}
-                className="px-4 py-2 text-sm font-medium text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
-              >
-                Hoje
-              </button>
+              <h2 className="text-base sm:text-lg font-bold text-text capitalize text-center leading-tight">
+                {getDateLabel()}
+              </h2>
               <button
                 onClick={() => navigateDate('next')}
-                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors flex-shrink-0"
               >
                 <ChevronRight className="w-5 h-5 text-text" />
               </button>
             </div>
 
-            <div className="text-text font-semibold capitalize">
-              {getDateLabel()}
+            {/* Row 2: Hoje button + view toggle */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={goToToday}
+                className="px-3 py-1.5 text-sm font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-lg transition-colors"
+              >
+                Hoje
+              </button>
+              <div className="flex bg-champagne-nuvem rounded-lg p-0.5 border border-accent/10">
+                <button
+                  onClick={() => setViewMode('day')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                    viewMode === 'day'
+                      ? 'bg-primary text-white'
+                      : 'text-text hover:bg-background-card'
+                  }`}
+                >
+                  Dia
+                </button>
+                <button
+                  onClick={() => setViewMode('week')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                    viewMode === 'week'
+                      ? 'bg-primary text-white'
+                      : 'text-text hover:bg-background-card'
+                  }`}
+                >
+                  Semana
+                </button>
+                <button
+                  onClick={() => setViewMode('month')}
+                  className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors ${
+                    viewMode === 'month'
+                      ? 'bg-primary text-white'
+                      : 'text-text hover:bg-background-card'
+                  }`}
+                >
+                  Mês
+                </button>
+              </div>
+            </div>
+
+            {/* Row 3: Summary + professional filter */}
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-text-muted">
+                {filteredAppointments.length} agendamento{filteredAppointments.length !== 1 ? 's' : ''}
+                {viewMode === 'day' ? ' neste dia' : viewMode === 'week' ? ' nesta semana' : ' neste mês'}
+              </p>
+              {isSuperAdmin && (
+                <select
+                  value={selectedProfessional}
+                  onChange={(e) => setSelectedProfessional(e.target.value)}
+                  className="w-48 sm:w-64 px-3 py-1.5 text-sm bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+                >
+                  <option value="">Todos os profissionais</option>
+                  {professionals.map((prof) => (
+                    <option key={prof.id} value={prof.id}>
+                      {prof.full_name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
-
-          {isSuperAdmin && (
-            <div>
-              <label className="block text-sm font-medium text-text mb-2">
-                Filtrar por Profissional
-              </label>
-              <select
-                value={selectedProfessional}
-                onChange={(e) => setSelectedProfessional(e.target.value)}
-                className="w-full sm:w-64 px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              >
-                <option value="">Todos os profissionais</option>
-                {professionals.map((prof) => (
-                  <option key={prof.id} value={prof.id}>
-                    {prof.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
         {loading ? (
@@ -416,10 +419,12 @@ export default function Agenda() {
             {viewMode === 'day' ? (
               <DayView
                 appointments={filteredAppointments}
+                currentDate={currentDate}
                 getStatusColor={getStatusColor}
                 getStatusLabel={getStatusLabel}
                 onRefresh={loadAppointments}
                 showToast={showToast}
+                onCreateNew={() => setShowCreateModal(true)}
               />
             ) : viewMode === 'week' ? (
               <WeekView
@@ -556,53 +561,86 @@ function MonthView({ currentDate, appointments, onDayClick }: MonthViewProps) {
 
 interface DayViewProps {
   appointments: Appointment[];
+  currentDate: Date;
   getStatusColor: (status: string) => string;
   getStatusLabel: (status: string) => string;
   onRefresh: () => void;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+  onCreateNew: () => void;
 }
 
-function DayView({ appointments, getStatusColor, getStatusLabel, onRefresh, showToast }: DayViewProps) {
-  // Find the next upcoming appointment
-  const now = new Date();
+function DayView({ appointments, currentDate, getStatusColor, getStatusLabel, onRefresh, showToast, onCreateNew }: DayViewProps) {
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
   const nowTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const todayStr = now.toISOString().split('T')[0];
+  const viewingToday = currentDate.toISOString().split('T')[0] === todayStr;
 
   const nextAppointmentId = useMemo(() => {
+    if (!viewingToday) return null;
     const upcoming = appointments.filter(
       (apt) =>
-        apt.appointment_date === todayStr &&
         apt.appointment_time >= nowTimeStr &&
         (apt.status === 'scheduled' || apt.status === 'confirmed')
     );
-    if (upcoming.length > 0) {
-      // Already sorted by time from query
-      return upcoming[0].id;
-    }
-    return null;
-  }, [appointments, todayStr, nowTimeStr]);
+    return upcoming.length > 0 ? upcoming[0].id : null;
+  }, [appointments, viewingToday, nowTimeStr]);
+
+  // Position for current time indicator line
+  const timeIndicatorIndex = useMemo(() => {
+    if (!viewingToday) return -1;
+    const idx = appointments.findIndex(apt => apt.appointment_time.substring(0, 5) > nowTimeStr);
+    return idx === -1 ? appointments.length : idx;
+  }, [appointments, viewingToday, nowTimeStr]);
 
   if (appointments.length === 0) {
     return (
-      <div className="text-center py-12">
-        <p className="text-text-muted">Nenhum agendamento para este dia</p>
+      <div className="text-center py-12 space-y-4">
+        <CalendarClock className="w-12 h-12 text-text-muted/40 mx-auto" />
+        <div>
+          <p className="text-text-muted font-medium">Nenhum agendamento para este dia</p>
+          <p className="text-text-muted/60 text-sm mt-1">Que tal criar um novo agendamento?</p>
+        </div>
+        <button
+          onClick={onCreateNew}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" />
+          Novo Agendamento
+        </button>
       </div>
     );
   }
 
+  const nowIndicator = (
+    <div className="flex items-center gap-2 py-1">
+      <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+      <div className="flex-1 h-px bg-red-500" />
+      <span className="text-xs font-medium text-red-500 flex-shrink-0">{nowTimeStr}</span>
+    </div>
+  );
+
   return (
     <div className="space-y-2">
-      {appointments.map((apt) => (
-        <AppointmentCard
-          key={apt.id}
-          appointment={apt}
-          getStatusColor={getStatusColor}
-          getStatusLabel={getStatusLabel}
-          onRefresh={onRefresh}
-          showToast={showToast}
-          isNext={apt.id === nextAppointmentId}
-        />
+      {appointments.map((apt, index) => (
+        <Fragment key={apt.id}>
+          {index === timeIndicatorIndex && nowIndicator}
+          <AppointmentCard
+            appointment={apt}
+            getStatusColor={getStatusColor}
+            getStatusLabel={getStatusLabel}
+            onRefresh={onRefresh}
+            showToast={showToast}
+            isNext={apt.id === nextAppointmentId}
+          />
+        </Fragment>
       ))}
+      {timeIndicatorIndex === appointments.length && nowIndicator}
     </div>
   );
 }
@@ -633,7 +671,7 @@ function WeekView({ weekDays, groupedAppointments, getStatusColor, getStatusLabe
             <div
               key={dateStr}
               className={`bg-champagne-nuvem rounded-lg p-4 border ${
-                isToday ? 'border-primary' : 'border-accent/20'
+                isToday ? 'border-primary' : 'border-accent/10'
               }`}
             >
               <div className="mb-3">
@@ -661,10 +699,13 @@ function WeekView({ weekDays, groupedAppointments, getStatusColor, getStatusLabe
                     <div
                       key={apt.id}
                       onClick={() => setSelectedAppointment(apt)}
-                      className="bg-background rounded-lg p-2 border border-accent/20 text-xs cursor-pointer hover:shadow-soft transition-all active:scale-[0.98]"
+                      className="bg-background rounded-lg p-2 border border-accent/10 text-xs cursor-pointer hover:shadow-card-hover transition-all active:scale-[0.98]"
                     >
                       <div className="font-medium text-text truncate">
                         {apt.appointment_time.substring(0, 5)}
+                        {apt.procedure?.duration_minutes && (
+                          <span className="text-text-muted font-normal"> · {apt.procedure.duration_minutes}min</span>
+                        )}
                       </div>
                       <div className="text-text-muted truncate">
                         {apt.patient?.full_name}
@@ -722,8 +763,8 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
     <>
       <div
         onClick={() => setShowDetails(true)}
-        className={`bg-champagne-nuvem rounded-xl p-5 border hover:shadow-soft transition-all cursor-pointer active:scale-[0.98] min-h-[80px] md:min-h-[72px] ${
-          isNext ? 'border-primary border-2 ring-2 ring-primary/20' : 'border-accent/20'
+        className={`bg-white rounded-xl p-5 border shadow-card hover:shadow-card-hover transition-all cursor-pointer active:scale-[0.98] min-h-[80px] md:min-h-[72px] ${
+          isNext ? 'border-primary border-2 ring-2 ring-primary/20' : 'border-accent/10'
         }`}
       >
         <div className="flex items-start justify-between gap-3">
@@ -743,7 +784,12 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
               )}
             </div>
             <h4 className="text-text font-semibold text-base mb-1.5 truncate">{appointment.patient?.full_name}</h4>
-            <p className="text-text-muted text-sm mb-1 truncate">{appointment.procedure?.name}</p>
+            <p className="text-text-muted text-sm mb-1 truncate">
+              {appointment.procedure?.name}
+              {appointment.procedure?.duration_minutes && (
+                <span className="text-text-muted/60"> · {appointment.procedure.duration_minutes} min</span>
+              )}
+            </p>
             {appointment.professional && (
               <p className="text-text-muted text-sm truncate">
                 Profissional: {appointment.professional.full_name}
@@ -935,14 +981,14 @@ function AppointmentDetailsContent({
           )}
 
           {showCancelReason && (
-            <div className="pt-4 border-t border-accent/20">
+            <div className="pt-4 border-t border-accent/10">
               <label className="block text-sm font-medium text-text mb-2">
                 Motivo do Cancelamento (opcional)
               </label>
               <textarea
                 value={cancellationReason}
                 onChange={(e) => setCancellationReason(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
                 rows={3}
                 placeholder="Por que este agendamento foi cancelado?"
                 disabled={updating}
@@ -951,7 +997,7 @@ function AppointmentDetailsContent({
                 <button
                   type="button"
                   onClick={() => setShowCancelReason(false)}
-                  className="flex-1 px-4 py-2 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+                  className="flex-1 px-4 py-2 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
                   disabled={updating}
                 >
                   Voltar
@@ -968,7 +1014,7 @@ function AppointmentDetailsContent({
           )}
 
           {!showCancelReason && (
-            <div className="pt-4 border-t border-accent/20">
+            <div className="pt-4 border-t border-accent/10">
               <label className="text-sm font-medium text-text mb-3 block">Ações</label>
               <div className="grid grid-cols-2 gap-3">
                 {(appointment.status === 'scheduled' || appointment.status === 'confirmed') && (
@@ -1144,7 +1190,7 @@ function TimeSlotPicker({ value, onChange, professionalId, date, excludeAppointm
         const occupiedCount = period.slots.filter((t) => occupiedSlots[t]).length;
 
         return (
-          <div key={period.name} className="border border-accent/20 rounded-xl overflow-hidden">
+          <div key={period.name} className="border border-accent/10 rounded-xl overflow-hidden">
             <button
               type="button"
               onClick={() => togglePeriod(period.name)}
@@ -1185,7 +1231,7 @@ function TimeSlotPicker({ value, onChange, professionalId, date, excludeAppointm
                       className={`p-2 rounded-lg border-2 transition-all text-center ${
                         isSelected
                           ? 'border-primary bg-primary/10'
-                          : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                          : 'border-accent/10 bg-champagne-nuvem hover:border-accent/40'
                       }`}
                     >
                       <p className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-text'}`}>{time}</p>
@@ -1378,7 +1424,7 @@ function EditAppointmentForm({
               setProfessionalId(e.target.value);
               setProcedureId('');
             }}
-            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
             required
             disabled={loading}
           >
@@ -1431,7 +1477,7 @@ function EditAppointmentForm({
                 className={`p-4 rounded-xl border-2 transition-all text-left ${
                   procedureId === procedure.id
                     ? 'border-primary bg-primary/10'
-                    : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                    : 'border-accent/10 bg-champagne-nuvem hover:border-accent/40'
                 }`}
               >
                 <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
@@ -1453,7 +1499,7 @@ function EditAppointmentForm({
           type="date"
           value={appointmentDate}
           onChange={(e) => setAppointmentDate(e.target.value)}
-          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
           required
           disabled={loading}
         />
@@ -1501,7 +1547,7 @@ function EditAppointmentForm({
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 btn-touch border border-accent/30 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
+          className="flex-1 btn-touch border border-accent/15 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
           disabled={loading}
         >
           Voltar
@@ -1793,7 +1839,7 @@ function CreateAppointmentForm({
           <select
             value={professionalId}
             onChange={(e) => setProfessionalId(e.target.value)}
-            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
             required
             disabled={loading}
           >
@@ -1846,7 +1892,7 @@ function CreateAppointmentForm({
                 className={`p-4 rounded-xl border-2 transition-all text-left ${
                   procedureId === procedure.id
                     ? 'border-primary bg-primary/10'
-                    : 'border-accent/20 bg-champagne-nuvem hover:border-accent/40'
+                    : 'border-accent/10 bg-champagne-nuvem hover:border-accent/40'
                 }`}
               >
                 <p className="font-semibold text-text text-sm mb-1 line-clamp-2">
@@ -1868,7 +1914,7 @@ function CreateAppointmentForm({
           type="date"
           value={appointmentDate}
           onChange={(e) => setAppointmentDate(e.target.value)}
-          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
+          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text text-base"
           required
           disabled={loading}
         />
@@ -1905,13 +1951,13 @@ function CreateAppointmentForm({
 
       {/* Calção (Opcional) */}
       {selectedProcedurePrice > 0 && (
-        <div className="border-t border-accent/20 pt-4 mt-2">
+        <div className="border-t border-accent/10 pt-4 mt-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={hasDownpayment}
               onChange={(e) => setHasDownpayment(e.target.checked)}
-              className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/30 rounded focus:ring-2 focus:ring-primary"
+              className="w-4 h-4 text-primary bg-champagne-nuvem border-accent/15 rounded focus:ring-2 focus:ring-primary"
               disabled={loading}
             />
             <span className="text-sm font-medium text-text">
@@ -1937,7 +1983,7 @@ function CreateAppointmentForm({
                     type="number"
                     value={downpaymentAmount || ''}
                     onChange={(e) => setDownpaymentAmount(Number(e.target.value))}
-                    className="w-full pl-10 pr-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                    className="w-full pl-10 pr-4 py-2 bg-background border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
                     placeholder="0,00"
                     step="0.01"
                     min="0"
@@ -1955,7 +2001,7 @@ function CreateAppointmentForm({
                 <select
                   value={downpaymentMethod}
                   onChange={(e) => setDownpaymentMethod(e.target.value as 'dinheiro' | 'credito' | 'debito' | 'pix')}
-                  className="w-full px-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                  className="w-full px-4 py-2 bg-background border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
                   required={hasDownpayment}
                   disabled={loading}
                 >
@@ -1973,7 +2019,7 @@ function CreateAppointmentForm({
                 <textarea
                   value={downpaymentNotes}
                   onChange={(e) => setDownpaymentNotes(e.target.value)}
-                  className="w-full px-4 py-2 bg-background border border-accent/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text resize-none"
+                  className="w-full px-4 py-2 bg-background border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text resize-none"
                   rows={2}
                   placeholder="Ex: Cliente pagou R$ 20 de entrada..."
                   disabled={loading}
@@ -2002,7 +2048,7 @@ function CreateAppointmentForm({
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 btn-touch border border-accent/30 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
+          className="flex-1 btn-touch border border-accent/15 text-text hover:bg-champagne-nuvem rounded-xl transition-colors font-medium"
           disabled={loading}
         >
           Cancelar
