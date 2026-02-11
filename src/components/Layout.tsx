@@ -46,6 +46,7 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Minha Agenda', icon: Calendar, path: '/minha-agenda' },
         { label: 'Pacientes', icon: UserCircle, path: '/pacientes' },
+        { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
         { label: 'Fechar Caixa', icon: DollarSign, path: '/fechar-caixa' },
       ];
 
