@@ -97,7 +97,9 @@ export default function PaymentModal({
   }
 
   function addPaymentSplit() {
-    setPaymentSplits([...paymentSplits, { method: 'dinheiro', amount: 0 }]);
+    const currentSum = paymentSplits.reduce((sum, s) => sum + s.amount, 0);
+    const rest = Math.max(0, Math.round((remainingAmount - currentSum) * 100) / 100);
+    setPaymentSplits([...paymentSplits, { method: 'dinheiro', amount: rest }]);
   }
 
   function removePaymentSplit(index: number) {
@@ -109,7 +111,13 @@ export default function PaymentModal({
       });
       return;
     }
-    setPaymentSplits(paymentSplits.filter((_, i) => i !== index));
+    const updated = paymentSplits.filter((_, i) => i !== index);
+    if (updated.length > 0) {
+      const lastIdx = updated.length - 1;
+      const sumOthers = updated.reduce((sum, s, i) => i < lastIdx ? sum + s.amount : sum, 0);
+      updated[lastIdx].amount = Math.max(0, Math.round((remainingAmount - sumOthers) * 100) / 100);
+    }
+    setPaymentSplits(updated);
   }
 
   function updatePaymentSplit(
@@ -122,6 +130,15 @@ export default function PaymentModal({
       updated[index].method = value as PaymentMethod;
     } else {
       updated[index].amount = Number(value) || 0;
+      if (updated.length > 1) {
+        const lastIdx = updated.length - 1;
+        // Determine which split to recalculate:
+        // - editing last → recalculate first
+        // - editing any other → recalculate last
+        const targetIdx = index === lastIdx ? 0 : lastIdx;
+        const sumOthers = updated.reduce((sum, s, i) => i !== targetIdx ? sum + s.amount : sum, 0);
+        updated[targetIdx].amount = Math.max(0, Math.round((remainingAmount - sumOthers) * 100) / 100);
+      }
     }
     setPaymentSplits(updated);
   }
