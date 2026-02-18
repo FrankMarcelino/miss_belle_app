@@ -74,7 +74,6 @@ export default function Agenda() {
       if (error) throw error;
       setProfessionals(data || []);
     } catch (error) {
-      console.error('Error loading professionals:', error);
     }
   }
 
@@ -120,7 +119,6 @@ export default function Agenda() {
       if (error) throw error;
       setAppointments(data || []);
     } catch (error) {
-      console.error('Error loading appointments:', error);
     } finally {
       setLoading(false);
     }
@@ -871,7 +869,6 @@ function AppointmentDetailsContent({
       onRefresh();
       onClose();
     } catch (error) {
-      console.error('Error updating status:', error);
     } finally {
       setUpdating(false);
     }
@@ -1139,7 +1136,6 @@ function TimeSlotPicker({ value, onChange, professionalId, date, excludeAppointm
       }
       setOccupiedSlots(occupied);
     } catch (error) {
-      console.error('Error loading day appointments for slots:', error);
     } finally {
       setLoadingSlots(false);
     }
@@ -1316,7 +1312,6 @@ function EditAppointmentForm({
 
       setProcedures(proceduresList);
     } catch (error) {
-      console.error('Error loading procedures:', error);
       setProcedures([]);
     }
   }
@@ -1332,7 +1327,6 @@ function EditAppointmentForm({
       if (error) throw error;
       setProfessionals(data || []);
     } catch (error) {
-      console.error('Error loading professionals:', error);
     }
   }
 
@@ -1349,7 +1343,6 @@ function EditAppointmentForm({
       if (error) throw error;
       setConflict(data === true);
     } catch (error) {
-      console.error('Error checking conflict:', error);
       setConflict(false);
     }
   }
@@ -1662,7 +1655,6 @@ function CreateAppointmentForm({
 
       setProcedures(proceduresList);
     } catch (error) {
-      console.error('Error loading procedures:', error);
       // Em caso de erro, não mostrar procedimentos
       setProcedures([]);
     }
@@ -1679,7 +1671,6 @@ function CreateAppointmentForm({
       if (error) throw error;
       setProfessionals(data || []);
     } catch (error) {
-      console.error('Error loading professionals:', error);
     }
   }
 
@@ -1696,7 +1687,6 @@ function CreateAppointmentForm({
       if (error) throw error;
       setConflict(data === true);
     } catch (error) {
-      console.error('Error checking conflict:', error);
       setConflict(false);
     }
   }
@@ -1805,7 +1795,6 @@ function CreateAppointmentForm({
             });
 
           if (transactionError) {
-            console.error('Error creating downpayment transaction:', transactionError);
             // Não bloquear o agendamento se a transação falhar
           }
         }

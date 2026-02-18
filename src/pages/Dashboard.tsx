@@ -51,7 +51,6 @@ export default function Dashboard() {
         loadTopProcedures(),
       ]);
     } catch (error) {
-      console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -127,7 +126,6 @@ export default function Dashboard() {
         totalRevenue: revenue,
       });
     } catch (error) {
-      console.error('Error loading stats:', error);
     }
   }
 
@@ -160,7 +158,6 @@ export default function Dashboard() {
 
       setUpcomingAppointments((data as unknown as UpcomingAppointment[]) || []);
     } catch (error) {
-      console.error('Error loading upcoming appointments:', error);
     }
   }
 
@@ -210,7 +207,6 @@ export default function Dashboard() {
 
       setTopProcedures(topProcs);
     } catch (error) {
-      console.error('Error loading top procedures:', error);
     }
   }
 

@@ -69,7 +69,6 @@ export default function PatientAutocomplete({
         setQuery(data.full_name);
       }
     } catch (error) {
-      console.error('Error loading patient:', error);
     }
   };
 
@@ -93,7 +92,6 @@ export default function PatientAutocomplete({
       setResults(data || []);
       setShowResults(true);
     } catch (error) {
-      console.error('Error searching patients:', error);
       setResults([]);
     } finally {
       setLoading(false);
@@ -155,7 +153,6 @@ export default function PatientAutocomplete({
         onChange(data.id);
       }
     } catch (error) {
-      console.error('Error creating patient:', error);
       alert(error instanceof Error ? error.message : 'Erro ao criar paciente');
     } finally {
       setCreating(false);

@@ -80,7 +80,6 @@ export default function Users() {
         await loadAllUserStats(data);
       }
     } catch (error) {
-      console.error('Error loading users:', error);
       showToast({
         type: 'error',
         message: 'Erro ao carregar usuários',
@@ -128,7 +127,6 @@ export default function Users() {
         patientsCount: patients.count || 0,
       };
     } catch (error) {
-      console.error('Error loading user stats:', error);
       return {
         appointmentsCount: 0,
         proceduresCount: 0,
@@ -154,7 +152,6 @@ export default function Users() {
       
       loadUsers();
     } catch (error) {
-      console.error('Error toggling user status:', error);
       showToast({
         type: 'error',
         message: 'Erro ao alterar status',
@@ -194,7 +191,6 @@ export default function Users() {
           .in('appointment_id', appointmentIds);
         
         if (transactionsError) {
-          console.warn('Error deleting transactions:', transactionsError);
         }
       }
 
@@ -205,7 +201,6 @@ export default function Users() {
         .eq('professional_id', userId);
 
       if (appointmentsError) {
-        console.warn('Error deleting appointments:', appointmentsError);
       }
 
       // 4. Deletar pacientes (referencia professional)
@@ -215,7 +210,6 @@ export default function Users() {
         .eq('professional_id', userId);
 
       if (patientsError) {
-        console.warn('Error deleting patients:', patientsError);
       }
 
       // 5. Deletar associações de procedimentos
@@ -225,7 +219,6 @@ export default function Users() {
         .eq('professional_id', userId);
 
       if (proceduresError) {
-        console.warn('Error deleting professional_procedures:', proceduresError);
       }
 
       // 6. Deletar fechamentos de caixa
@@ -235,7 +228,6 @@ export default function Users() {
         .eq('professional_id', userId);
 
       if (closingsError) {
-        console.warn('Error deleting cash register closings:', closingsError);
       }
 
       // 7. Finalmente, deletar o profile
@@ -250,7 +242,6 @@ export default function Users() {
       const { error: authError } = await supabase.auth.admin.deleteUser(userId);
 
       if (authError) {
-        console.warn('Could not delete auth user:', authError);
       }
 
       showToast({
@@ -262,7 +253,6 @@ export default function Users() {
       setDeletingUser(null);
       loadUsers();
     } catch (error) {
-      console.error('Error deleting user:', error);
       showToast({
         type: 'error',
         message: 'Erro ao deletar usuário',
@@ -603,7 +593,6 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
       if (error) throw error;
       setProcedures(data || []);
     } catch (error) {
-      console.error('Error loading procedures:', error);
     } finally {
       setLoadingProcedures(false);
     }
@@ -622,7 +611,6 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
       setSelectedProcedures(procIds);
       setInitialProcedures(procIds);
     } catch (error) {
-      console.error('Error loading user procedures:', error);
     }
   }
 
@@ -658,7 +646,6 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
       );
 
       if (authError) {
-        console.warn('Could not update auth email:', authError);
       }
 
       // ✨ NOVO: Atualizar procedimentos associados
@@ -675,7 +662,6 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
           .in('procedure_id', toRemove);
 
         if (removeError) {
-          console.warn('Error removing procedures:', removeError);
         }
       }
 
@@ -691,7 +677,6 @@ function EditUserModal({ user, onClose, onSuccess }: EditUserModalProps) {
           .insert(associations);
 
         if (addError) {
-          console.warn('Error adding procedures:', addError);
         }
       }
 
@@ -1056,7 +1041,6 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
       if (error) throw error;
       setProcedures(data || []);
     } catch (error) {
-      console.error('Error loading procedures:', error);
     } finally {
       setLoadingProcedures(false);
     }
@@ -1117,7 +1101,6 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
           .insert(associations);
 
         if (assocError) {
-          console.warn('Erro ao associar procedimentos:', assocError);
           // Não bloqueia a criação do usuário
         }
       }
@@ -1317,7 +1300,6 @@ async function checkUserDependenciesGlobal(userId: string): Promise<UserDependen
       proceduresCount: procedures.count || 0,
     };
   } catch (error) {
-    console.error('Error checking dependencies:', error);
     return {
       hasAppointments: false,
       appointmentsCount: 0,

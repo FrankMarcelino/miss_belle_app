@@ -175,7 +175,6 @@ export default function Expenses() {
         loadAdminExpenses(),
       ]);
     } catch (err) {
-      console.error('Erro ao carregar despesas:', err);
       const msg = err instanceof Error
         ? err.message
         : (err as { message?: string })?.message ?? JSON.stringify(err);
@@ -908,7 +907,6 @@ function PaySplitSheet({ split, onClose, onSuccess, showToast }: PaySplitSheetPr
       showToast('success', 'Pagamento registrado!', `${split.expense.title} marcada como paga.`);
       onSuccess();
     } catch (err) {
-      console.error(err);
       showToast('error', 'Erro', err instanceof Error ? err.message : 'Não foi possível registrar o pagamento.');
     } finally {
       setLoading(false);

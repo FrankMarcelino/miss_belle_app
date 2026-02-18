@@ -87,7 +87,6 @@ export default function PaymentModal({
 
       setClosingId(closing?.id || null);
     } catch (error) {
-      console.error('Error loading/creating closing:', error);
       showToast({
         type: 'error',
         message: 'Erro ao carregar caixa',
@@ -210,7 +209,6 @@ export default function PaymentModal({
       onSuccess();
       onClose();
     } catch (error) {
-      console.error('Error processing payment:', error);
       showToast({
         type: 'error',
         message: 'Erro ao processar pagamento',

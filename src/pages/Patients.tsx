@@ -38,7 +38,6 @@ export default function Patients() {
       if (error) throw error;
       setPatients(data || []);
     } catch (error) {
-      console.error('Error loading patients:', error);
     } finally {
       setLoading(false);
     }

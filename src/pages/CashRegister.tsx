@@ -79,7 +79,6 @@ export default function CashRegister() {
       if (error) throw error;
       setProfessionals(data || []);
     } catch (error) {
-      console.error('Error loading professionals:', error);
     }
   }
 
@@ -106,7 +105,6 @@ export default function CashRegister() {
       if (error) throw error;
       setClosings(data || []);
     } catch (error) {
-      console.error('Error loading closings:', error);
     } finally {
       setLoading(false);
     }
@@ -142,7 +140,6 @@ export default function CashRegister() {
       if (error) throw error;
       setPendingAppointments(data || []);
     } catch (error) {
-      console.error('Error loading pending appointments:', error);
     } finally {
       setLoadingPending(false);
     }
@@ -180,7 +177,6 @@ export default function CashRegister() {
       setShowTransactions(true);
       loadClosings();
     } catch (error) {
-      console.error('Error creating closing:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao criar fechamento';
       alert(errorMessage);
     }
@@ -485,7 +481,6 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       if (error) throw error;
       setTransactions(data || []);
     } catch (error) {
-      console.error('Error loading transactions:', error);
     } finally {
       setLoading(false);
     }
@@ -508,7 +503,6 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       loadTransactions();
       onUpdate();
     } catch (error) {
-      console.error('Error deleting transaction:', error);
       alert('Erro ao excluir transação. Verifique se o fechamento não está finalizado.');
     }
   }
@@ -532,7 +526,6 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       onUpdate();
       onClose();
     } catch (error) {
-      console.error('Error finalizing closing:', error);
     }
   }
 
@@ -698,7 +691,6 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
       if (error) throw error;
       setAppointments(data || []);
     } catch (error) {
-      console.error('Error loading appointments:', error);
     }
   }
 
@@ -722,7 +714,6 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
       // Trigger will automatically update the closing total
       onSuccess();
     } catch (error) {
-      console.error('Error adding transaction:', error);
       const errorMessage = error instanceof Error ? error.message : 'Erro ao adicionar transação. Verifique se o fechamento não está finalizado.';
       alert(errorMessage);
     } finally {

@@ -17,24 +17,20 @@ function App() {
   const { user, loading, profile } = useAuth();
   const { currentRoute, navigate, getDefaultRoute } = useRouter();
 
-  console.log('🎯 App render - loading:', loading, 'user:', user?.id, 'profile:', profile?.id, 'currentRoute:', currentRoute);
 
   // ✨ Redirecionar para rota apropriada quando usuário está logado
   useEffect(() => {
     if (!loading && user && profile) {
-      console.log('🔄 App: User logged in, ensuring proper route');
       const defaultRoute = getDefaultRoute(profile.role === 'super_admin');
       
       // Se não está em nenhuma rota válida, navegar para a padrão
       if (!currentRoute || currentRoute === '/') {
-        console.log('➡️ App: Navigating to default route:', defaultRoute);
         navigate(defaultRoute);
       }
     }
   }, [loading, user, profile, currentRoute, navigate, getDefaultRoute]);
 
   if (loading) {
-    console.log('⏳ App: Still loading...');
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -46,11 +42,9 @@ function App() {
   }
 
   if (!user) {
-    console.log('🚪 App: No user, showing login');
     return <Login />;
   }
 
-  console.log('✅ App: User logged in, rendering protected content');
 
   const renderPage = () => {
     switch (currentRoute) {

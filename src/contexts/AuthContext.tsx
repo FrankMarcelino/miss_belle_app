@@ -58,7 +58,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadProfile(userId: string) {
     try {
-      console.log('🔍 Loading profile for user:', userId);
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -66,22 +65,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        console.error('❌ Error loading profile:', error);
         throw error;
       }
 
-      console.log('✅ Profile loaded:', data);
 
       if (!data) {
-        console.warn('⚠️ No profile found for user:', userId);
       }
 
       setProfile(data);
     } catch (error) {
-      console.error('❌ Error in loadProfile:', error);
       setProfile(null);
     } finally {
-      console.log('✅ Loading finished, setting loading to false');
       setLoading(false);
     }
   }
@@ -100,7 +94,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signUp(email: string, password: string, fullName: string) {
     try {
-      console.log('📝 Starting sign up for:', email);
 
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
@@ -111,23 +104,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (signUpError) {
-        console.error('❌ Auth signup error:', signUpError);
         throw signUpError;
       }
 
       if (!authData.user) {
-        console.error('❌ No user returned from signup');
         throw new Error('Falha ao criar usuário');
       }
 
-      console.log('✅ User created:', authData.user.id);
 
       const { count } = await supabase
         .from('profiles')
         .select('*', { count: 'exact', head: true });
 
       const isFirstUser = count === 0;
-      console.log('👤 Is first user:', isFirstUser, '(count:', count, ')');
 
       const { error: profileError } = await supabase
         .from('profiles')
@@ -140,17 +129,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (profileError) {
-        console.error('❌ Error creating profile:', profileError);
         throw new Error('Erro ao criar perfil: ' + profileError.message);
       }
 
-      console.log('✅ Profile created successfully');
 
       await loadProfile(authData.user.id);
 
       return { error: null };
     } catch (error) {
-      console.error('❌ SignUp error:', error);
       return { error: error as Error };
     }
   }

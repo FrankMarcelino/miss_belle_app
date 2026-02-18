@@ -64,7 +64,6 @@ export default function Procedures() {
         setProcedures(proceduresList);
       }
     } catch (error) {
-      console.error('Error loading procedures:', error);
     } finally {
       setLoading(false);
     }
