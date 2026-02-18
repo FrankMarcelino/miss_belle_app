@@ -9,6 +9,7 @@ import {
   Scissors,
   UserCircle,
   DollarSign,
+  Receipt,
   Heart,
   Menu,
   X,
@@ -41,6 +42,7 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Procedimentos', icon: Scissors, path: '/procedimentos' },
         { label: 'Pacientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Fechamentos', icon: DollarSign, path: '/fechamentos', superAdminOnly: true },
+        { label: 'Despesas', icon: Receipt, path: '/despesas' },
       ]
     : [
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
@@ -48,6 +50,7 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Pacientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
         { label: 'Fechar Caixa', icon: DollarSign, path: '/fechar-caixa' },
+        { label: 'Despesas', icon: Receipt, path: '/despesas' },
       ];
 
   return (
@@ -78,7 +81,7 @@ export default function Layout({ children }: LayoutProps) {
               return (
                 <button
                   key={item.path}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => { navigate(item.path); setSidebarOpen(false); }}
                   className={`w-full flex items-center gap-3 px-4 py-3 text-text hover:bg-champagne-nuvem rounded-lg transition-colors group ${
                     currentRoute === item.path ? 'bg-champagne-nuvem' : ''
                   }`}
@@ -123,22 +126,14 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg border-b border-accent/10 px-4 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="lg:hidden p-2 text-text hover:bg-background-card rounded-lg transition-colors"
-            >
-              {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="lg:hidden fixed top-4 left-4 z-40 p-2 text-text bg-white/80 backdrop-blur-lg rounded-lg shadow-soft border border-accent/10"
+        >
+          {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
 
-            <div className="flex-1 lg:flex-none">
-              <h2 className="text-xl font-semibold text-text">Dashboard</h2>
-            </div>
-          </div>
-        </header>
-
-        <main className="p-4 lg:p-8 pb-24 md:pb-8">
+        <main className="p-4 lg:p-8 pb-24 md:pb-8 pt-16 lg:pt-8">
           {children}
         </main>
       </div>

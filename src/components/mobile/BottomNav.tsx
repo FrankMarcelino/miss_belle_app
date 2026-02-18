@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, DollarSign } from 'lucide-react';
+import { Home, Calendar, Users, DollarSign, Receipt } from 'lucide-react';
 import { useRouter } from '../../contexts/RouterContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -26,6 +26,13 @@ export default function BottomNav() {
       label: 'Pacientes',
       icon: Users,
       route: '/pacientes',
+      roles: ['user', 'super_admin'],
+    },
+    {
+      id: 'expenses',
+      label: 'Despesas',
+      icon: Receipt,
+      route: '/despesas',
       roles: ['user', 'super_admin'],
     },
     {

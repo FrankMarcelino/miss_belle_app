@@ -57,7 +57,7 @@ export default function Procedures() {
         if (error) throw error;
 
         const proceduresList = (data || [])
-          .map((item: any) => item.procedures as Procedure | null)
+          .map((item) => (item as { procedures: unknown }).procedures as Procedure | null)
           .filter((p): p is Procedure => p !== null && p.is_active);
 
         proceduresList.sort((a, b) => a.name.localeCompare(b.name));
@@ -70,9 +70,7 @@ export default function Procedures() {
     }
   }
 
-  function canEdit(_procedure: Procedure) {
-    // Super admin edits all; professionals can edit any procedure in their list
-    // (list is already filtered to their associated procedures)
+  function canEdit() {
     return isSuperAdmin || true;
   }
 
@@ -139,7 +137,7 @@ export default function Procedures() {
               >
                 <div className="flex items-start justify-between mb-3">
                   <h3 className="font-semibold text-text text-lg">{procedure.name}</h3>
-                  {canEdit(procedure) && (
+                  {canEdit() && (
                     <div className="flex gap-1">
                       <button
                         onClick={() => setEditingProcedure(procedure)}
