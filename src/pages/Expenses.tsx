@@ -143,17 +143,33 @@ function formatDate(dateStr: string | null): string {
   return d.toLocaleDateString('pt-BR');
 }
 
+function getDueDateUrgency(d: string | null): 'overdue' | 'today' | 'soon' | 'ok' | null {
+  if (!d) return null;
+  const diff = Math.floor((new Date(d + 'T23:59:59').getTime() - Date.now()) / 86400000);
+  if (diff < 0) return 'overdue';
+  if (diff === 0) return 'today';
+  if (diff <= 3) return 'soon';
+  return 'ok';
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Expenses() {
   const { user, isSuperAdmin } = useAuth();
   const { showToast, ToastComponent } = useToast();
 
+  // Data states
   const [period, setPeriod] = useState(currentPeriod);
   const [pendingSplits, setPendingSplits] = useState<ExpenseSplit[]>([]);
   const [paidSplits, setPaidSplits] = useState<ExpenseSplit[]>([]);
   const [adminExpenses, setAdminExpenses] = useState<AdminExpense[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // UI states
+  const [view, setView] = useState<'splits' | 'manage'>('splits');
+  const [activeTab, setActiveTab] = useState<'pending' | 'paid'>('pending');
+  const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
 
   // Sheets
   const [createSheet, setCreateSheet] = useState(false);
@@ -248,8 +264,31 @@ export default function Expenses() {
     loadAdminExpenses();
   }
 
+  // Derived data
   const totalPending = pendingSplits.reduce((s, x) => s + x.amount_due, 0);
   const totalPaid    = paidSplits.reduce((s, x) => s + x.amount_due, 0);
+
+  const activeList = activeTab === 'pending' ? pendingSplits : paidSplits;
+  const splitCategories = [...new Set(activeList.map(s => s.expense.category))];
+  const filteredSplits = categoryFilter === 'all'
+    ? activeList
+    : activeList.filter(s => s.expense.category === categoryFilter);
+
+  const adminCategories = [...new Set(adminExpenses.map(e => e.category))];
+  const filteredAdminExpenses = adminCategoryFilter === 'all'
+    ? adminExpenses
+    : adminExpenses.filter(e => e.category === adminCategoryFilter);
+
+  function handleViewChange(v: 'splits' | 'manage') {
+    setView(v);
+    setCategoryFilter('all');
+    setAdminCategoryFilter('all');
+  }
+
+  function handleTabChange(tab: 'pending' | 'paid') {
+    setActiveTab(tab);
+    setCategoryFilter('all');
+  }
 
   if (loading) {
     return (
@@ -260,14 +299,14 @@ export default function Expenses() {
   }
 
   return (
-    <div className="space-y-6 pb-4">
+    <div className="space-y-4 pb-4">
       {ToastComponent}
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Despesas</h1>
-          <p className="text-text-muted mt-1">Gerencie custos e contas a pagar</p>
+          <p className="text-text-muted mt-1 text-sm">Gerencie custos e contas a pagar</p>
         </div>
         <button
           onClick={() => setCreateSheet(true)}
@@ -278,119 +317,263 @@ export default function Expenses() {
         </button>
       </div>
 
-      {/* Period navigation */}
-      <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
-        <button
-          onClick={() => setPeriod(p => navigatePeriod(p, 'prev'))}
-          className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
-        >
-          <ChevronLeft className="w-5 h-5 text-text-muted" />
-        </button>
-        <span className="font-semibold text-text capitalize">
-          {periodLabel(period)}
-        </span>
-        <button
-          onClick={() => setPeriod(p => navigatePeriod(p, 'next'))}
-          className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
-          disabled={period >= currentPeriod()}
-        >
-          <ChevronRight className={`w-5 h-5 ${period >= currentPeriod() ? 'text-accent/40' : 'text-text-muted'}`} />
-        </button>
-      </div>
-
-      {/* Summary cards */}
-      {(pendingSplits.length > 0 || paidSplits.length > 0) && (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="bg-white rounded-xl p-4 border border-orange-200 shadow-card">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-4 h-4 text-orange-500" />
-              <span className="text-xs font-medium text-orange-600">A Pagar</span>
-            </div>
-            <p className="text-xl font-bold text-text">{formatCurrency(totalPending)}</p>
-            <p className="text-xs text-text-muted mt-0.5">{pendingSplits.length} despesa{pendingSplits.length !== 1 ? 's' : ''}</p>
-          </div>
-          <div className="bg-white rounded-xl p-4 border border-green-200 shadow-card">
-            <div className="flex items-center gap-2 mb-1">
-              <Check className="w-4 h-4 text-green-500" />
-              <span className="text-xs font-medium text-green-600">Pago</span>
-            </div>
-            <p className="text-xl font-bold text-text">{formatCurrency(totalPaid)}</p>
-            <p className="text-xs text-text-muted mt-0.5">{paidSplits.length} despesa{paidSplits.length !== 1 ? 's' : ''}</p>
-          </div>
+      {/* View switcher — only shown when user has admin expenses */}
+      {adminExpenses.length > 0 && (
+        <div className="flex bg-champagne-nuvem rounded-xl p-1 border border-accent/15">
+          <button
+            onClick={() => handleViewChange('splits')}
+            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+              view === 'splits' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
+            }`}
+          >
+            Minha Conta
+          </button>
+          <button
+            onClick={() => handleViewChange('manage')}
+            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+              view === 'manage' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
+            }`}
+          >
+            Gerenciar
+            <span className={`px-1.5 py-0.5 text-xs rounded-full font-bold ${
+              view === 'manage' ? 'bg-primary/15 text-primary' : 'bg-accent/20 text-text-muted'
+            }`}>
+              {adminExpenses.length}
+            </span>
+          </button>
         </div>
       )}
 
-      {/* Pending splits */}
-      <section>
-        <h2 className="text-base font-semibold text-text mb-3 flex items-center gap-2">
-          <Clock className="w-4 h-4 text-orange-500" />
-          A Pagar
-          {pendingSplits.length > 0 && (
-            <span className="ml-1 px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">
-              {pendingSplits.length}
-            </span>
+      {view === 'splits' ? (
+        <>
+          {/* Summary cards — clickable to switch tab */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => handleTabChange('pending')}
+              className={`bg-white rounded-xl p-4 border shadow-card text-left transition-all ${
+                activeTab === 'pending'
+                  ? 'border-orange-300 ring-1 ring-orange-200'
+                  : 'border-orange-100 hover:border-orange-200'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Clock className="w-4 h-4 text-orange-500" />
+                <span className="text-xs font-medium text-orange-600">A Pagar</span>
+              </div>
+              <p className="text-xl font-bold text-text">{formatCurrency(totalPending)}</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {pendingSplits.length} despesa{pendingSplits.length !== 1 ? 's' : ''}
+              </p>
+            </button>
+            <button
+              onClick={() => handleTabChange('paid')}
+              className={`bg-white rounded-xl p-4 border shadow-card text-left transition-all ${
+                activeTab === 'paid'
+                  ? 'border-green-300 ring-1 ring-green-200'
+                  : 'border-green-100 hover:border-green-200'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <Check className="w-4 h-4 text-green-500" />
+                <span className="text-xs font-medium text-green-600">Histórico</span>
+              </div>
+              <p className="text-xl font-bold text-text">{formatCurrency(totalPaid)}</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {paidSplits.length} despesa{paidSplits.length !== 1 ? 's' : ''}
+              </p>
+            </button>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex bg-champagne-nuvem rounded-xl p-1 border border-accent/15">
+            <button
+              onClick={() => handleTabChange('pending')}
+              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
+                activeTab === 'pending' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
+              }`}
+            >
+              A Pagar
+              {pendingSplits.length > 0 && (
+                <span className={`px-1.5 py-0.5 text-xs rounded-full font-bold ${
+                  activeTab === 'pending' ? 'bg-orange-100 text-orange-700' : 'bg-accent/20 text-text-muted'
+                }`}>
+                  {pendingSplits.length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleTabChange('paid')}
+              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                activeTab === 'paid' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
+              }`}
+            >
+              Histórico
+            </button>
+          </div>
+
+          {/* Period navigator — only visible in Histórico tab */}
+          {activeTab === 'paid' && (
+            <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
+              <button
+                onClick={() => setPeriod(p => navigatePeriod(p, 'prev'))}
+                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 text-text-muted" />
+              </button>
+              <span className="font-semibold text-text capitalize text-sm">
+                {periodLabel(period)}
+              </span>
+              <button
+                onClick={() => setPeriod(p => navigatePeriod(p, 'next'))}
+                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                disabled={period >= currentPeriod()}
+              >
+                <ChevronRight className={`w-5 h-5 ${period >= currentPeriod() ? 'text-accent/40' : 'text-text-muted'}`} />
+              </button>
+            </div>
           )}
-        </h2>
 
-        {pendingSplits.length === 0 ? (
-          <div className="bg-white rounded-xl p-8 border border-accent/10 shadow-card text-center">
-            <Check className="w-10 h-10 text-green-400 mx-auto mb-2" />
-            <p className="text-text-muted text-sm">Nenhuma despesa pendente</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {pendingSplits.map(split => (
-              <SplitCard
-                key={split.id}
-                split={split}
-                onPay={() => setPaySheet(split)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+          {/* Category chips */}
+          {splitCategories.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              <button
+                onClick={() => setCategoryFilter('all')}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  categoryFilter === 'all'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-text-muted border-accent/20 hover:border-accent/40'
+                }`}
+              >
+                Todas
+              </button>
+              {splitCategories.map(cat => {
+                const cfg = CATEGORY_CONFIG[cat];
+                const Icon = cfg.icon;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      categoryFilter === cat
+                        ? `${cfg.bgColor} ${cfg.color} border-transparent`
+                        : 'bg-white text-text-muted border-accent/20 hover:border-accent/40'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-      {/* Paid splits */}
-      {paidSplits.length > 0 && (
-        <section>
-          <h2 className="text-base font-semibold text-text mb-3 flex items-center gap-2">
-            <Check className="w-4 h-4 text-green-500" />
-            Pago em {periodLabel(period)}
-          </h2>
-          <div className="space-y-3">
-            {paidSplits.map(split => (
-              <SplitCard
-                key={split.id}
-                split={split}
-                onPay={() => setPaySheet(split)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+          {/* Split cards */}
+          {filteredSplits.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 border border-accent/10 shadow-card text-center">
+              {activeTab === 'pending' ? (
+                <>
+                  <Check className="w-10 h-10 text-green-400 mx-auto mb-2" />
+                  <p className="text-text-muted text-sm">Nenhuma despesa pendente</p>
+                </>
+              ) : (
+                <>
+                  <Clock className="w-10 h-10 text-text-muted/40 mx-auto mb-2" />
+                  <p className="text-text-muted text-sm capitalize">
+                    Sem pagamentos em {periodLabel(period)}
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredSplits.map(split => (
+                <SplitCard
+                  key={split.id}
+                  split={split}
+                  onPay={() => setPaySheet(split)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Manage view */}
 
-      {/* All expenses (admin sees all, regular users see expenses they created or are assigned to) */}
-      {adminExpenses.length > 0 && (
-        <section>
-          <h2 className="text-base font-semibold text-text mb-3 flex items-center gap-2">
-            <Tag className="w-4 h-4 text-text-muted" />
-            {isSuperAdmin ? 'Todas as Despesas' : 'Despesas que Gerencio'}
-            <span className="ml-1 px-2 py-0.5 bg-champagne-nuvem text-text-muted text-xs font-medium rounded-full">
-              {adminExpenses.length}
+          {/* Period navigator — always visible in manage view */}
+          <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
+            <button
+              onClick={() => setPeriod(p => navigatePeriod(p, 'prev'))}
+              className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+            >
+              <ChevronLeft className="w-5 h-5 text-text-muted" />
+            </button>
+            <span className="font-semibold text-text capitalize text-sm">
+              {periodLabel(period)}
             </span>
-          </h2>
-          <div className="space-y-3">
-            {adminExpenses.map(expense => (
-              <AdminExpenseCard
-                key={expense.id}
-                expense={expense}
-                period={period}
-                onManage={() => setDetailSheet(expense)}
-                showToast={showToast}
-              />
-            ))}
+            <button
+              onClick={() => setPeriod(p => navigatePeriod(p, 'next'))}
+              className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+              disabled={period >= currentPeriod()}
+            >
+              <ChevronRight className={`w-5 h-5 ${period >= currentPeriod() ? 'text-accent/40' : 'text-text-muted'}`} />
+            </button>
           </div>
-        </section>
+
+          {/* Admin category chips */}
+          {adminCategories.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              <button
+                onClick={() => setAdminCategoryFilter('all')}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  adminCategoryFilter === 'all'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-white text-text-muted border-accent/20 hover:border-accent/40'
+                }`}
+              >
+                Todas
+              </button>
+              {adminCategories.map(cat => {
+                const cfg = CATEGORY_CONFIG[cat];
+                const Icon = cfg.icon;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setAdminCategoryFilter(cat)}
+                    className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      adminCategoryFilter === cat
+                        ? `${cfg.bgColor} ${cfg.color} border-transparent`
+                        : 'bg-white text-text-muted border-accent/20 hover:border-accent/40'
+                    }`}
+                  >
+                    <Icon className="w-3 h-3" />
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Admin expense cards */}
+          {filteredAdminExpenses.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 border border-accent/10 shadow-card text-center">
+              <Tag className="w-10 h-10 text-text-muted/40 mx-auto mb-2" />
+              <p className="text-text-muted text-sm">Nenhuma despesa cadastrada</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredAdminExpenses.map(expense => (
+                <AdminExpenseCard
+                  key={expense.id}
+                  expense={expense}
+                  period={period}
+                  onManage={() => setDetailSheet(expense)}
+                  showToast={showToast}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {/* Sheets */}
@@ -457,6 +640,17 @@ function SplitCard({ split, onPay }: SplitCardProps) {
   const cat = CATEGORY_CONFIG[split.expense.category] ?? CATEGORY_CONFIG.outros;
   const Icon = cat.icon;
   const isPaid = split.status === 'paid';
+  const urgency = isPaid ? null : getDueDateUrgency(split.due_date);
+
+  const borderClass = urgency === 'overdue'
+    ? 'border-red-200'
+    : urgency === 'today'
+    ? 'border-orange-300'
+    : urgency === 'soon'
+    ? 'border-amber-200'
+    : isPaid
+    ? 'border-green-100'
+    : 'border-accent/10';
 
   async function handleViewProof() {
     if (!split.payment_proof_url) return;
@@ -467,93 +661,116 @@ function SplitCard({ split, onPay }: SplitCardProps) {
   }
 
   return (
-    <div className={`bg-white rounded-xl p-4 border shadow-card transition-all ${
-      isPaid ? 'border-green-200' : 'border-accent/10'
-    }`}>
-      <div className="flex items-start gap-3">
-        {/* Category icon */}
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
-          <Icon className={`w-5 h-5 ${cat.color}`} />
+    <div className={`bg-white rounded-xl border shadow-card overflow-hidden transition-all ${borderClass}`}>
+      {/* Urgency banner */}
+      {urgency === 'overdue' && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-xs font-semibold uppercase tracking-wide">
+            Vencido em {formatDate(split.due_date)}
+          </span>
         </div>
+      )}
+      {urgency === 'today' && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white">
+          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="text-xs font-semibold uppercase tracking-wide">
+            Vence hoje
+          </span>
+        </div>
+      )}
+      {urgency === 'soon' && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100">
+          <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+          <span className="text-xs font-semibold text-amber-700">
+            Vence em {formatDate(split.due_date)}
+          </span>
+        </div>
+      )}
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="font-semibold text-text truncate">{split.expense.title}</p>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="text-xs text-text-muted">{cat.label}</span>
-                <span className="text-xs text-text-muted">·</span>
-                <span className="text-xs text-text-muted">
-                  {RECURRENCE_LABELS[split.expense.recurrence]}
-                </span>
-                {split.expense.type === 'fixed' && (
-                  <>
-                    <span className="text-xs text-text-muted">·</span>
-                    <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
-                  </>
-                )}
-                {split.expense.creator?.full_name && (
-                  <>
-                    <span className="text-xs text-text-muted">·</span>
-                    <span className="text-xs flex items-center gap-0.5 text-text-muted">
-                      <UserCircle className="w-3 h-3" />
-                      {split.expense.creator.full_name.split(' ')[0]}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            <p className="font-bold text-text text-lg whitespace-nowrap">
-              {formatCurrency(split.amount_due)}
-            </p>
+      <div className="p-4">
+        {/* Main row */}
+        <div className="flex items-start gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
+            <Icon className={`w-5 h-5 ${cat.color}`} />
           </div>
 
-          {split.due_date && !isPaid && (
-            <p className="text-xs text-text-muted mt-1">
-              Vence em {formatDate(split.due_date)}
-            </p>
-          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-text truncate">{split.expense.title}</p>
+              <p className="font-bold text-text text-lg whitespace-nowrap">
+                {formatCurrency(split.amount_due)}
+              </p>
+            </div>
 
-          {isPaid && split.paid_at && (
-            <p className="text-xs text-green-600 mt-1">
-              Pago em {new Date(split.paid_at).toLocaleDateString('pt-BR')}
-            </p>
-          )}
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+              <span className="text-xs text-text-muted">{cat.label}</span>
+              <span className="text-xs text-text-muted">·</span>
+              <span className="text-xs text-text-muted">{RECURRENCE_LABELS[split.expense.recurrence]}</span>
+              {split.expense.type === 'fixed' && (
+                <>
+                  <span className="text-xs text-text-muted">·</span>
+                  <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
+                </>
+              )}
+            </div>
 
-          {split.notes && (
-            <p className="text-xs text-text-muted mt-1 italic truncate">{split.notes}</p>
-          )}
-        </div>
-      </div>
+            {/* Status badge */}
+            <div className="mt-2">
+              {isPaid ? (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 px-2.5 py-1 bg-green-50 rounded-full border border-green-200">
+                  <Check className="w-3 h-3" />
+                  PAGO
+                  {split.paid_at && (
+                    <span className="font-normal text-green-600 ml-0.5">
+                      · {new Date(split.paid_at).toLocaleDateString('pt-BR')}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-orange-700 px-2.5 py-1 bg-orange-50 rounded-full border border-orange-200">
+                  <Clock className="w-3 h-3" />
+                  PENDENTE
+                </span>
+              )}
+            </div>
 
-      {/* Actions */}
-      <div className="mt-3 flex items-center gap-2">
-        {!isPaid ? (
-          <button
-            onClick={onPay}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium"
-          >
-            <Check className="w-4 h-4" />
-            Marcar como Pago
-          </button>
-        ) : (
-          <div className="flex-1 flex items-center gap-2">
-            <span className="flex items-center gap-1.5 px-3 py-2 bg-green-50 text-green-700 rounded-lg text-sm font-medium border border-green-200">
-              <Check className="w-4 h-4" />
-              Pago
-            </span>
-            {split.payment_proof_url && (
-              <button
-                onClick={handleViewProof}
-                className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text rounded-lg text-sm transition-colors border border-accent/15"
-              >
-                <Eye className="w-4 h-4" />
-                Comprovante
-              </button>
+            {split.notes && (
+              <p className="text-xs text-text-muted mt-1.5 italic truncate">{split.notes}</p>
             )}
           </div>
-        )}
+        </div>
+
+        {/* Actions */}
+        <div className="mt-3 flex items-center gap-2">
+          {!isPaid ? (
+            <button
+              onClick={onPay}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium"
+            >
+              <Check className="w-4 h-4" />
+              Marcar como Pago
+            </button>
+          ) : (
+            <div className="flex-1 flex items-center gap-2">
+              {split.payment_proof_url && (
+                <button
+                  onClick={handleViewProof}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text rounded-lg text-sm transition-colors border border-accent/15"
+                >
+                  <Eye className="w-4 h-4" />
+                  Comprovante
+                </button>
+              )}
+              <button
+                onClick={onPay}
+                className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text-muted rounded-lg text-sm transition-colors border border-accent/15"
+              >
+                Detalhes
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -607,51 +824,60 @@ function AdminExpenseCard({ expense, period, onManage }: AdminExpenseCardProps) 
 
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="font-semibold text-text">{expense.title}</p>
-                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              <div className="min-w-0">
+                <p className="font-semibold text-text truncate">{expense.title}</p>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="text-xs text-text-muted">{cat.label}</span>
                   <span className="text-xs text-text-muted">·</span>
                   <span className="text-xs text-text-muted flex items-center gap-1">
                     <Repeat className="w-3 h-3" />
                     {RECURRENCE_LABELS[expense.recurrence]}
                     {expense.recurrence === 'monthly' && expense.due_day_of_month && (
-                      <span> · dia {expense.due_day_of_month}</span>
+                      ` · dia ${expense.due_day_of_month}`
                     )}
                   </span>
-                  {expense.creator?.full_name && (
+                  {expense.type === 'fixed' && (
                     <>
                       <span className="text-xs text-text-muted">·</span>
-                      <span className="text-xs flex items-center gap-0.5 text-text-muted">
-                        <UserCircle className="w-3 h-3" />
-                        {expense.creator.full_name.split(' ')[0]}
-                      </span>
+                      <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
                     </>
                   )}
                 </div>
               </div>
-              <p className="font-bold text-text text-lg whitespace-nowrap">
+              <p className="font-bold text-text text-lg whitespace-nowrap flex-shrink-0">
                 {formatCurrency(expense.amount)}
               </p>
             </div>
 
-            {/* Assigned users pill */}
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-              <Users className="w-3.5 h-3.5 text-text-muted" />
-              {expense.expense_assignments.slice(0, 3).map(a => (
-                <span
-                  key={a.user_id}
-                  className="text-xs px-2 py-0.5 bg-champagne-nuvem text-text rounded-full"
-                >
-                  {a.user?.full_name?.split(' ')[0] ?? '—'}
-                </span>
-              ))}
-              {expense.expense_assignments.length > 3 && (
+            {/* Assignee avatars with per-person amount */}
+            {expense.expense_assignments.length > 0 && (
+              <div className="flex items-center gap-2 mt-2">
+                <div className="flex -space-x-1.5">
+                  {expense.expense_assignments.slice(0, 4).map(a => (
+                    <div
+                      key={a.user_id}
+                      title={a.user?.full_name ?? ''}
+                      className="w-6 h-6 rounded-full bg-primary/20 border-2 border-white flex items-center justify-center"
+                    >
+                      <span className="text-[10px] font-bold text-primary">
+                        {a.user?.full_name?.[0] ?? '?'}
+                      </span>
+                    </div>
+                  ))}
+                  {expense.expense_assignments.length > 4 && (
+                    <div className="w-6 h-6 rounded-full bg-accent/20 border-2 border-white flex items-center justify-center">
+                      <span className="text-[10px] font-medium text-text-muted">
+                        +{expense.expense_assignments.length - 4}
+                      </span>
+                    </div>
+                  )}
+                </div>
                 <span className="text-xs text-text-muted">
-                  +{expense.expense_assignments.length - 3}
+                  {expense.expense_assignments.length} responsável{expense.expense_assignments.length !== 1 ? 'is' : ''}
+                  {' · '}{formatCurrency(expense.amount / expense.expense_assignments.length)} cada
                 </span>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -681,27 +907,18 @@ function AdminExpenseCard({ expense, period, onManage }: AdminExpenseCardProps) 
 
       {/* Expanded splits */}
       {expanded && splits.length > 0 && (
-        <div className="border-t border-accent/10 px-4 py-3 space-y-2 bg-champagne-nuvem/50">
+        <div className="border-t border-accent/10 px-4 py-3 space-y-1.5 bg-champagne-nuvem/50">
           <p className="text-xs font-medium text-text-muted mb-2">
             {periodLabel(period)} — {paidCount} pago{paidCount !== 1 ? 's' : ''}, {pendingCount} pendente{pendingCount !== 1 ? 's' : ''}
           </p>
           {splits.map(s => (
-            <div key={s.id} className="flex items-center justify-between py-1">
-              <span className="text-sm text-text">{s.user?.full_name ?? '—'}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-text">{formatCurrency(s.amount_due)}</span>
-                {s.status === 'paid' ? (
-                  <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                    <Check className="w-3.5 h-3.5" />
-                    Pago
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs text-orange-500 font-medium">
-                    <Clock className="w-3.5 h-3.5" />
-                    Pendente
-                  </span>
-                )}
-              </div>
+            <div key={s.id} className="flex items-center gap-3 py-1">
+              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'paid' ? 'bg-green-400' : 'bg-orange-400'}`} />
+              <span className="text-sm text-text flex-1">{s.user?.full_name ?? '—'}</span>
+              <span className="text-sm font-medium text-text">{formatCurrency(s.amount_due)}</span>
+              <span className={`text-xs font-medium ${s.status === 'paid' ? 'text-green-600' : 'text-orange-500'}`}>
+                {s.status === 'paid' ? 'Pago' : 'Pendente'}
+              </span>
             </div>
           ))}
         </div>
