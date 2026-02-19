@@ -8,26 +8,27 @@ import {
   Check, Clock, Home, Zap, TrendingUp,
   MoreHorizontal, Upload, Eye,
   Repeat, Tag, Users, Trash2, AlertTriangle, X,
-  Droplets, ChevronDown, ChevronUp, Pencil, UserCircle,
+  Droplets, ChevronDown, ChevronUp, Pencil,
   Sparkles, Scissors, HardHat, Box, Wifi, Gift,
+  Calendar, Percent,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ExpenseCategory =
-  | 'aluguel'      // aluguel do espaço e locações
-  | 'energia'      // água, luz, gás — contas fixas do imóvel
-  | 'internet'     // internet, telefone, streaming
-  | 'insumos'      // produtos consumidos nos atendimentos
-  | 'limpeza'      // faxineira, dedetização, jardineiro, descartáveis
-  | 'decoracao'    // plantas, quadros, objetos decorativos
-  | 'obras'        // reformas, reparos, melhorias
-  | 'mimos'        // café, comidas, mimos para clientes
-  | 'equipamentos' // compra ou manutenção de equipamentos
-  | 'marketing'    // publicidade, redes sociais, impressos
-  | 'outros';      // despesas diversas
+  | 'aluguel'
+  | 'energia'
+  | 'internet'
+  | 'insumos'
+  | 'limpeza'
+  | 'decoracao'
+  | 'obras'
+  | 'mimos'
+  | 'equipamentos'
+  | 'marketing'
+  | 'outros';
 
-type ExpenseRecurrence = 'once' | 'monthly' | 'yearly';
+type ExpenseRecurrence = 'once' | 'monthly' | 'yearly' | 'installments';
 type ExpenseType = 'fixed' | 'variable';
 
 interface Expense {
@@ -43,6 +44,11 @@ interface Expense {
   created_by: string;
   is_active: boolean;
   created_at: string;
+  installments_count: number;
+  contract_end_date: string | null;
+  adjustment_index: string | null;
+  adjustment_value: number | null;
+  effective_from: string;
   creator?: { full_name: string } | null;
 }
 
@@ -57,6 +63,7 @@ interface ExpenseSplit {
   paid_at: string | null;
   payment_proof_url: string | null;
   notes: string | null;
+  installment_number: number | null;
   expense: Expense;
 }
 
@@ -82,6 +89,7 @@ interface SplitWithUser {
   paid_at: string | null;
   payment_proof_url: string | null;
   reference_period: string | null;
+  installment_number: number | null;
   user: { full_name: string } | null;
 }
 
@@ -111,6 +119,7 @@ const RECURRENCE_LABELS: Record<ExpenseRecurrence, string> = {
   once: 'Única',
   monthly: 'Mensal',
   yearly: 'Anual',
+  installments: 'Parcelado',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -118,6 +127,10 @@ const RECURRENCE_LABELS: Record<ExpenseRecurrence, string> = {
 function currentPeriod(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function isPeriodFuture(period: string): boolean {
+  return period > currentPeriod();
 }
 
 function periodLabel(period: string): string {
@@ -152,22 +165,27 @@ function getDueDateUrgency(d: string | null): 'overdue' | 'today' | 'soon' | 'ok
   return 'ok';
 }
 
+function daysToContractEnd(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  return Math.ceil((new Date(dateStr + 'T23:59:59').getTime() - Date.now()) / 86400000);
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Expenses() {
-  const { user, isSuperAdmin } = useAuth();
+  const { user } = useAuth();
   const { showToast, ToastComponent } = useToast();
 
   // Data states
   const [period, setPeriod] = useState(currentPeriod);
-  const [pendingSplits, setPendingSplits] = useState<ExpenseSplit[]>([]);
-  const [paidSplits, setPaidSplits] = useState<ExpenseSplit[]>([]);
+  const [monthlySplits, setMonthlySplits] = useState<ExpenseSplit[]>([]);
+  const [overdueOtherMonths, setOverdueOtherMonths] = useState<ExpenseSplit[]>([]);
   const [adminExpenses, setAdminExpenses] = useState<AdminExpense[]>([]);
   const [loading, setLoading] = useState(true);
 
   // UI states
   const [view, setView] = useState<'splits' | 'manage'>('splits');
-  const [activeTab, setActiveTab] = useState<'pending' | 'paid'>('pending');
+  const [overdueExpanded, setOverdueExpanded] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
   const [adminCategoryFilter, setAdminCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
 
@@ -203,32 +221,55 @@ export default function Expenses() {
   async function loadUserSplits() {
     if (!user) return;
 
-    // Pendentes: qualquer período (despesas únicas atrasadas aparecem aqui)
-    const { data: pending, error: e1 } = await supabase
+    const periodStart = `${period}-01`;
+    const [pYear, pMonth] = period.split('-').map(Number);
+    const lastDay = new Date(pYear, pMonth, 0).getDate();
+    const periodEnd = `${period}-${String(lastDay).padStart(2, '0')}`;
+
+    // Splits com reference_period = mês selecionado (recorrentes, parcelados, anuais)
+    const q1 = supabase
+      .from('expense_splits')
+      .select('*, expense:expenses(*, creator:profiles!expenses_created_by_fkey(full_name))')
+      .eq('user_id', user.id)
+      .eq('reference_period', period);
+
+    // Splits únicos (reference_period IS NULL) com vencimento no mês selecionado
+    const q2 = supabase
+      .from('expense_splits')
+      .select('*, expense:expenses(*, creator:profiles!expenses_created_by_fkey(full_name))')
+      .eq('user_id', user.id)
+      .is('reference_period', null)
+      .gte('due_date', periodStart)
+      .lte('due_date', periodEnd);
+
+    const [r1, r2] = await Promise.all([q1, q2]);
+    if (r1.error) throw r1.error;
+    if (r2.error) throw r2.error;
+
+    const monthly = [
+      ...((r1.data as unknown as ExpenseSplit[]) ?? []),
+      ...((r2.data as unknown as ExpenseSplit[]) ?? []),
+    ].sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? ''));
+
+    // Splits em atraso de outros meses (pendentes com vencimento antes de hoje)
+    const today = new Date().toISOString().split('T')[0];
+    const { data: overdueRaw, error: e3 } = await supabase
       .from('expense_splits')
       .select('*, expense:expenses(*, creator:profiles!expenses_created_by_fkey(full_name))')
       .eq('user_id', user.id)
       .eq('status', 'pending')
+      .lt('due_date', today)
       .order('due_date', { ascending: true });
 
-    if (e1) throw e1;
+    if (e3) throw e3;
 
-    // Pagas: somente do período selecionado (histórico mensal)
-    const periodStart = `${period}-01`;
-    const periodEnd   = `${period}-31`;
+    // Excluir os que já estão no mês selecionado
+    const monthlyIds = new Set(monthly.map(s => s.id));
+    const overdueFiltered = ((overdueRaw as unknown as ExpenseSplit[]) ?? [])
+      .filter(s => !monthlyIds.has(s.id));
 
-    const { data: paid, error: e2 } = await supabase
-      .from('expense_splits')
-      .select('*, expense:expenses(*, creator:profiles!expenses_created_by_fkey(full_name))')
-      .eq('user_id', user.id)
-      .eq('status', 'paid')
-      .gte('paid_at', periodStart)
-      .lte('paid_at', periodEnd + 'T23:59:59');
-
-    if (e2) throw e2;
-
-    setPendingSplits((pending as unknown as ExpenseSplit[]) ?? []);
-    setPaidSplits((paid as unknown as ExpenseSplit[]) ?? []);
+    setMonthlySplits(monthly);
+    setOverdueOtherMonths(overdueFiltered);
   }
 
   async function loadAdminExpenses() {
@@ -265,14 +306,28 @@ export default function Expenses() {
   }
 
   // Derived data
-  const totalPending = pendingSplits.reduce((s, x) => s + x.amount_due, 0);
-  const totalPaid    = paidSplits.reduce((s, x) => s + x.amount_due, 0);
+  const isFuturePeriod = isPeriodFuture(period);
 
-  const activeList = activeTab === 'pending' ? pendingSplits : paidSplits;
-  const splitCategories = [...new Set(activeList.map(s => s.expense.category))];
-  const filteredSplits = categoryFilter === 'all'
-    ? activeList
-    : activeList.filter(s => s.expense.category === categoryFilter);
+  const monthlyPending = monthlySplits.filter(s => s.status === 'pending');
+  const monthlyPaid    = monthlySplits.filter(s => s.status === 'paid');
+  const totalMonth        = monthlySplits.reduce((s, x) => s + x.amount_due, 0);
+  const totalMonthPaid    = monthlyPaid.reduce((s, x) => s + x.amount_due, 0);
+  const totalMonthPending = monthlyPending.reduce((s, x) => s + x.amount_due, 0);
+
+  const urgencyOrder: Record<string, number> = { overdue: 0, today: 1, soon: 2, ok: 3 };
+  const sortedMonthlyPending = [...monthlyPending].sort((a, b) => {
+    const ua = getDueDateUrgency(a.due_date) ?? 'ok';
+    const ub = getDueDateUrgency(b.due_date) ?? 'ok';
+    return urgencyOrder[ua] - urgencyOrder[ub];
+  });
+
+  const splitCategories = [...new Set(monthlySplits.map(s => s.expense.category))];
+  const filteredMonthlyPending = categoryFilter === 'all'
+    ? sortedMonthlyPending
+    : sortedMonthlyPending.filter(s => s.expense.category === categoryFilter);
+  const filteredMonthlyPaid = categoryFilter === 'all'
+    ? monthlyPaid
+    : monthlyPaid.filter(s => s.expense.category === categoryFilter);
 
   const adminCategories = [...new Set(adminExpenses.map(e => e.category))];
   const filteredAdminExpenses = adminCategoryFilter === 'all'
@@ -283,11 +338,6 @@ export default function Expenses() {
     setView(v);
     setCategoryFilter('all');
     setAdminCategoryFilter('all');
-  }
-
-  function handleTabChange(tab: 'pending' | 'paid') {
-    setActiveTab(tab);
-    setCategoryFilter('all');
   }
 
   if (loading) {
@@ -317,7 +367,7 @@ export default function Expenses() {
         </button>
       </div>
 
-      {/* View switcher — only shown when user has admin expenses */}
+      {/* View switcher */}
       {adminExpenses.length > 0 && (
         <div className="flex bg-champagne-nuvem rounded-xl p-1 border border-accent/15">
           <button
@@ -346,90 +396,95 @@ export default function Expenses() {
 
       {view === 'splits' ? (
         <>
-          {/* Summary cards — clickable to switch tab */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Period navigator — always visible */}
+          <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
             <button
-              onClick={() => handleTabChange('pending')}
-              className={`bg-white rounded-xl p-4 border shadow-card text-left transition-all ${
-                activeTab === 'pending'
-                  ? 'border-orange-300 ring-1 ring-orange-200'
-                  : 'border-orange-100 hover:border-orange-200'
-              }`}
+              onClick={() => { setPeriod(p => navigatePeriod(p, 'prev')); setCategoryFilter('all'); }}
+              className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
             >
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-orange-500" />
-                <span className="text-xs font-medium text-orange-600">A Pagar</span>
-              </div>
-              <p className="text-xl font-bold text-text">{formatCurrency(totalPending)}</p>
-              <p className="text-xs text-text-muted mt-0.5">
-                {pendingSplits.length} despesa{pendingSplits.length !== 1 ? 's' : ''}
-              </p>
+              <ChevronLeft className="w-5 h-5 text-text-muted" />
             </button>
-            <button
-              onClick={() => handleTabChange('paid')}
-              className={`bg-white rounded-xl p-4 border shadow-card text-left transition-all ${
-                activeTab === 'paid'
-                  ? 'border-green-300 ring-1 ring-green-200'
-                  : 'border-green-100 hover:border-green-200'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <Check className="w-4 h-4 text-green-500" />
-                <span className="text-xs font-medium text-green-600">Histórico</span>
-              </div>
-              <p className="text-xl font-bold text-text">{formatCurrency(totalPaid)}</p>
-              <p className="text-xs text-text-muted mt-0.5">
-                {paidSplits.length} despesa{paidSplits.length !== 1 ? 's' : ''}
-              </p>
-            </button>
-          </div>
-
-          {/* Tab bar */}
-          <div className="flex bg-champagne-nuvem rounded-xl p-1 border border-accent/15">
-            <button
-              onClick={() => handleTabChange('pending')}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 ${
-                activeTab === 'pending' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
-              }`}
-            >
-              A Pagar
-              {pendingSplits.length > 0 && (
-                <span className={`px-1.5 py-0.5 text-xs rounded-full font-bold ${
-                  activeTab === 'pending' ? 'bg-orange-100 text-orange-700' : 'bg-accent/20 text-text-muted'
-                }`}>
-                  {pendingSplits.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => handleTabChange('paid')}
-              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                activeTab === 'paid' ? 'bg-white shadow-soft text-text' : 'text-text-muted hover:text-text'
-              }`}
-            >
-              Histórico
-            </button>
-          </div>
-
-          {/* Period navigator — only visible in Histórico tab */}
-          {activeTab === 'paid' && (
-            <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
-              <button
-                onClick={() => setPeriod(p => navigatePeriod(p, 'prev'))}
-                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5 text-text-muted" />
-              </button>
+            <div className="flex items-center gap-2">
               <span className="font-semibold text-text capitalize text-sm">
                 {periodLabel(period)}
               </span>
+              {isFuturePeriod && (
+                <span className="text-xs font-semibold text-blue-600 px-2 py-0.5 bg-blue-50 rounded-full border border-blue-200">
+                  PREVISTO
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => { setPeriod(p => navigatePeriod(p, 'next')); setCategoryFilter('all'); }}
+              className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+            >
+              <ChevronRight className="w-5 h-5 text-text-muted" />
+            </button>
+          </div>
+
+          {/* 3 Summary cards */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white rounded-xl p-3 border border-accent/10 shadow-card">
+              <p className="text-xs font-medium text-text-muted mb-1">Total</p>
+              <p className="text-base font-bold text-text leading-tight">{formatCurrency(totalMonth)}</p>
+              <p className="text-xs text-text-muted/70 mt-0.5">
+                {monthlySplits.length} item{monthlySplits.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-green-100 shadow-card">
+              <div className="flex items-center gap-1 mb-1">
+                <Check className="w-3 h-3 text-green-500" />
+                <p className="text-xs font-medium text-green-600">Pago</p>
+              </div>
+              <p className="text-base font-bold text-text leading-tight">{formatCurrency(totalMonthPaid)}</p>
+              <p className="text-xs text-text-muted/70 mt-0.5">
+                {monthlyPaid.length} item{monthlyPaid.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl p-3 border border-orange-100 shadow-card">
+              <div className="flex items-center gap-1 mb-1">
+                <Clock className="w-3 h-3 text-orange-500" />
+                <p className="text-xs font-medium text-orange-600">A Pagar</p>
+              </div>
+              <p className="text-base font-bold text-text leading-tight">{formatCurrency(totalMonthPending)}</p>
+              <p className="text-xs text-text-muted/70 mt-0.5">
+                {monthlyPending.length} item{monthlyPending.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          </div>
+
+          {/* Em Atraso — splits vencidos de outros meses */}
+          {overdueOtherMonths.length > 0 && (
+            <div className="bg-red-50 rounded-xl border border-red-200 overflow-hidden">
               <button
-                onClick={() => setPeriod(p => navigatePeriod(p, 'next'))}
-                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
-                disabled={period >= currentPeriod()}
+                onClick={() => setOverdueExpanded(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3"
               >
-                <ChevronRight className={`w-5 h-5 ${period >= currentPeriod() ? 'text-accent/40' : 'text-text-muted'}`} />
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-500" />
+                  <span className="text-sm font-semibold text-red-700">Em Atraso</span>
+                  <span className="px-1.5 py-0.5 text-xs bg-red-200 text-red-800 rounded-full font-bold">
+                    {overdueOtherMonths.length}
+                  </span>
+                </div>
+                {overdueExpanded
+                  ? <ChevronUp className="w-4 h-4 text-red-500" />
+                  : <ChevronDown className="w-4 h-4 text-red-500" />
+                }
               </button>
+              {overdueExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {overdueOtherMonths.map(split => (
+                    <SplitCard
+                      key={split.id}
+                      split={split}
+                      onPay={() => setPaySheet(split)}
+                      onRefresh={loadUserSplits}
+                      showToast={showToast}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -467,30 +522,58 @@ export default function Expenses() {
             </div>
           )}
 
-          {/* Split cards */}
-          {filteredSplits.length === 0 ? (
+          {/* Unified list */}
+          {monthlySplits.length === 0 ? (
             <div className="bg-white rounded-xl p-8 border border-accent/10 shadow-card text-center">
-              {activeTab === 'pending' ? (
+              {isFuturePeriod ? (
                 <>
-                  <Check className="w-10 h-10 text-green-400 mx-auto mb-2" />
-                  <p className="text-text-muted text-sm">Nenhuma despesa pendente</p>
+                  <Calendar className="w-10 h-10 text-blue-300 mx-auto mb-2" />
+                  <p className="text-text-muted text-sm capitalize">
+                    Sem despesas previstas em {periodLabel(period)}
+                  </p>
+                  <p className="text-xs text-text-muted/60 mt-1">
+                    Despesas mensais ativas aparecerão aqui
+                  </p>
                 </>
               ) : (
                 <>
-                  <Clock className="w-10 h-10 text-text-muted/40 mx-auto mb-2" />
+                  <Check className="w-10 h-10 text-green-400 mx-auto mb-2" />
                   <p className="text-text-muted text-sm capitalize">
-                    Sem pagamentos em {periodLabel(period)}
+                    Sem despesas em {periodLabel(period)}
                   </p>
                 </>
               )}
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredSplits.map(split => (
+            <div className="space-y-2">
+              {/* Pendentes (ordenados por urgência) */}
+              {filteredMonthlyPending.map(split => (
                 <SplitCard
                   key={split.id}
                   split={split}
                   onPay={() => setPaySheet(split)}
+                  onRefresh={loadUserSplits}
+                  showToast={showToast}
+                />
+              ))}
+
+              {/* Divisor entre pendentes e pagos */}
+              {filteredMonthlyPaid.length > 0 && filteredMonthlyPending.length > 0 && (
+                <div className="flex items-center gap-3 py-1">
+                  <div className="flex-1 h-px bg-accent/10" />
+                  <span className="text-xs text-text-muted/50 font-medium">Pagos</span>
+                  <div className="flex-1 h-px bg-accent/10" />
+                </div>
+              )}
+
+              {/* Pagos */}
+              {filteredMonthlyPaid.map(split => (
+                <SplitCard
+                  key={split.id}
+                  split={split}
+                  onPay={() => setPaySheet(split)}
+                  onRefresh={loadUserSplits}
+                  showToast={showToast}
                 />
               ))}
             </div>
@@ -500,7 +583,7 @@ export default function Expenses() {
         <>
           {/* Manage view */}
 
-          {/* Period navigator — always visible in manage view */}
+          {/* Period navigator — always visible, no future restriction */}
           <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-accent/10 shadow-card">
             <button
               onClick={() => setPeriod(p => navigatePeriod(p, 'prev'))}
@@ -508,15 +591,21 @@ export default function Expenses() {
             >
               <ChevronLeft className="w-5 h-5 text-text-muted" />
             </button>
-            <span className="font-semibold text-text capitalize text-sm">
-              {periodLabel(period)}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-text capitalize text-sm">
+                {periodLabel(period)}
+              </span>
+              {isPeriodFuture(period) && (
+                <span className="text-xs font-semibold text-blue-600 px-2 py-0.5 bg-blue-50 rounded-full border border-blue-200">
+                  PREVISTO
+                </span>
+              )}
+            </div>
             <button
               onClick={() => setPeriod(p => navigatePeriod(p, 'next'))}
               className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
-              disabled={period >= currentPeriod()}
             >
-              <ChevronRight className={`w-5 h-5 ${period >= currentPeriod() ? 'text-accent/40' : 'text-text-muted'}`} />
+              <ChevronRight className="w-5 h-5 text-text-muted" />
             </button>
           </div>
 
@@ -568,6 +657,7 @@ export default function Expenses() {
                   expense={expense}
                   period={period}
                   onManage={() => setDetailSheet(expense)}
+                  onRefresh={loadData}
                   showToast={showToast}
                 />
               ))}
@@ -634,13 +724,21 @@ export default function Expenses() {
 interface SplitCardProps {
   split: ExpenseSplit;
   onPay: () => void;
+  onRefresh: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
-function SplitCard({ split, onPay }: SplitCardProps) {
+function SplitCard({ split, onPay, onRefresh, showToast }: SplitCardProps) {
+  const [showUpdateAmount, setShowUpdateAmount] = useState(false);
+
   const cat = CATEGORY_CONFIG[split.expense.category] ?? CATEGORY_CONFIG.outros;
   const Icon = cat.icon;
   const isPaid = split.status === 'paid';
-  const urgency = isPaid ? null : getDueDateUrgency(split.due_date);
+  const isForecast = !isPaid && split.reference_period !== null && isPeriodFuture(split.reference_period);
+  const urgency = isPaid || isForecast ? null : getDueDateUrgency(split.due_date);
+
+  const isInstallment = split.installment_number !== null && split.expense.installments_count > 1;
+  const canUpdateAmount = split.expense.type === 'variable' && !isPaid && split.reference_period !== null;
 
   const borderClass = urgency === 'overdue'
     ? 'border-red-200'
@@ -650,6 +748,8 @@ function SplitCard({ split, onPay }: SplitCardProps) {
     ? 'border-amber-200'
     : isPaid
     ? 'border-green-100'
+    : isForecast
+    ? 'border-blue-100'
     : 'border-accent/10';
 
   async function handleViewProof() {
@@ -661,118 +761,160 @@ function SplitCard({ split, onPay }: SplitCardProps) {
   }
 
   return (
-    <div className={`bg-white rounded-xl border shadow-card overflow-hidden transition-all ${borderClass}`}>
-      {/* Urgency banner */}
-      {urgency === 'overdue' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white">
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="text-xs font-semibold uppercase tracking-wide">
-            Vencido em {formatDate(split.due_date)}
-          </span>
-        </div>
-      )}
-      {urgency === 'today' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white">
-          <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="text-xs font-semibold uppercase tracking-wide">
-            Vence hoje
-          </span>
-        </div>
-      )}
-      {urgency === 'soon' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100">
-          <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-          <span className="text-xs font-semibold text-amber-700">
-            Vence em {formatDate(split.due_date)}
-          </span>
-        </div>
-      )}
-
-      <div className="p-4">
-        {/* Main row */}
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
-            <Icon className={`w-5 h-5 ${cat.color}`} />
+    <>
+      <div className={`bg-white rounded-xl border shadow-card overflow-hidden transition-all ${borderClass}`}>
+        {/* Urgency / forecast banner */}
+        {urgency === 'overdue' && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="text-xs font-semibold uppercase tracking-wide">
+              Vencido em {formatDate(split.due_date)}
+            </span>
           </div>
+        )}
+        {urgency === 'today' && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white">
+            <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="text-xs font-semibold uppercase tracking-wide">Vence hoje</span>
+          </div>
+        )}
+        {urgency === 'soon' && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100">
+            <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+            <span className="text-xs font-semibold text-amber-700">
+              Vence em {formatDate(split.due_date)}
+            </span>
+          </div>
+        )}
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-text truncate">{split.expense.title}</p>
-              <p className="font-bold text-text text-lg whitespace-nowrap">
-                {formatCurrency(split.amount_due)}
-              </p>
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
+              <Icon className={`w-5 h-5 ${cat.color}`} />
             </div>
 
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              <span className="text-xs text-text-muted">{cat.label}</span>
-              <span className="text-xs text-text-muted">·</span>
-              <span className="text-xs text-text-muted">{RECURRENCE_LABELS[split.expense.recurrence]}</span>
-              {split.expense.type === 'fixed' && (
-                <>
-                  <span className="text-xs text-text-muted">·</span>
-                  <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
-                </>
-              )}
-            </div>
-
-            {/* Status badge */}
-            <div className="mt-2">
-              {isPaid ? (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 px-2.5 py-1 bg-green-50 rounded-full border border-green-200">
-                  <Check className="w-3 h-3" />
-                  PAGO
-                  {split.paid_at && (
-                    <span className="font-normal text-green-600 ml-0.5">
-                      · {new Date(split.paid_at).toLocaleDateString('pt-BR')}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-text truncate">{split.expense.title}</p>
+                  {isInstallment && (
+                    <span className="inline-block text-xs font-medium text-violet-600 px-1.5 py-0.5 bg-violet-50 rounded mt-0.5">
+                      Parcela {split.installment_number}/{split.expense.installments_count}
                     </span>
                   )}
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-orange-700 px-2.5 py-1 bg-orange-50 rounded-full border border-orange-200">
-                  <Clock className="w-3 h-3" />
-                  PENDENTE
-                </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <p className="font-bold text-text text-lg whitespace-nowrap">
+                    {formatCurrency(split.amount_due)}
+                  </p>
+                  {canUpdateAmount && (
+                    <button
+                      onClick={() => setShowUpdateAmount(true)}
+                      className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                      title="Atualizar valor"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className="text-xs text-text-muted">{cat.label}</span>
+                <span className="text-xs text-text-muted">·</span>
+                <span className="text-xs text-text-muted">{RECURRENCE_LABELS[split.expense.recurrence]}</span>
+                {split.expense.type === 'fixed' && (
+                  <>
+                    <span className="text-xs text-text-muted">·</span>
+                    <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
+                  </>
+                )}
+              </div>
+
+              {/* Status badge */}
+              <div className="mt-2">
+                {isPaid ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-700 px-2.5 py-1 bg-green-50 rounded-full border border-green-200">
+                    <Check className="w-3 h-3" />
+                    PAGO
+                    {split.paid_at && (
+                      <span className="font-normal text-green-600 ml-0.5">
+                        · {new Date(split.paid_at).toLocaleDateString('pt-BR')}
+                      </span>
+                    )}
+                  </span>
+                ) : isForecast ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 px-2.5 py-1 bg-blue-50 rounded-full border border-blue-200">
+                    <Calendar className="w-3 h-3" />
+                    PREVISTO
+                    {split.due_date && (
+                      <span className="font-normal text-blue-600 ml-0.5">
+                        · {formatDate(split.due_date)}
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-orange-700 px-2.5 py-1 bg-orange-50 rounded-full border border-orange-200">
+                    <Clock className="w-3 h-3" />
+                    PENDENTE
+                  </span>
+                )}
+              </div>
+
+              {split.notes && (
+                <p className="text-xs text-text-muted mt-1.5 italic truncate">{split.notes}</p>
               )}
             </div>
-
-            {split.notes && (
-              <p className="text-xs text-text-muted mt-1.5 italic truncate">{split.notes}</p>
-            )}
           </div>
-        </div>
 
-        {/* Actions */}
-        <div className="mt-3 flex items-center gap-2">
-          {!isPaid ? (
-            <button
-              onClick={onPay}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium"
-            >
-              <Check className="w-4 h-4" />
-              Marcar como Pago
-            </button>
-          ) : (
-            <div className="flex-1 flex items-center gap-2">
-              {split.payment_proof_url && (
-                <button
-                  onClick={handleViewProof}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text rounded-lg text-sm transition-colors border border-accent/15"
-                >
-                  <Eye className="w-4 h-4" />
-                  Comprovante
-                </button>
-              )}
+          {/* Actions */}
+          <div className="mt-3 flex items-center gap-2">
+            {!isPaid && !isForecast ? (
               <button
                 onClick={onPay}
-                className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text-muted rounded-lg text-sm transition-colors border border-accent/15"
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium"
               >
-                Detalhes
+                <Check className="w-4 h-4" />
+                Marcar como Pago
               </button>
-            </div>
-          )}
+            ) : isPaid ? (
+              <div className="flex-1 flex items-center gap-2">
+                {split.payment_proof_url && (
+                  <button
+                    onClick={handleViewProof}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text rounded-lg text-sm transition-colors border border-accent/15"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Comprovante
+                  </button>
+                )}
+                <button
+                  onClick={onPay}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-champagne-nuvem hover:bg-accent/20 text-text-muted rounded-lg text-sm transition-colors border border-accent/15"
+                >
+                  Detalhes
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+
+      {showUpdateAmount && split.reference_period && (
+        <UpdateAmountSheet
+          expenseId={split.expense_id}
+          period={split.reference_period}
+          currentAmount={split.expense.amount}
+          title={split.expense.title}
+          onClose={() => setShowUpdateAmount(false)}
+          onSuccess={() => {
+            setShowUpdateAmount(false);
+            onRefresh();
+          }}
+          showToast={showToast}
+        />
+      )}
+    </>
   );
 }
 
@@ -782,16 +924,26 @@ interface AdminExpenseCardProps {
   expense: AdminExpense;
   period: string;
   onManage: () => void;
+  onRefresh: () => void;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
 }
 
-function AdminExpenseCard({ expense, period, onManage }: AdminExpenseCardProps) {
+function AdminExpenseCard({ expense, period, onManage, onRefresh, showToast }: AdminExpenseCardProps) {
+  const { isSuperAdmin } = useAuth();
   const [expanded, setExpanded] = useState(false);
   const [splits, setSplits] = useState<SplitWithUser[]>([]);
   const [loadingSplits, setLoadingSplits] = useState(false);
+  const [showUpdateAmount, setShowUpdateAmount] = useState(false);
+  const [showAdjustment, setShowAdjustment] = useState(false);
 
   const cat = CATEGORY_CONFIG[expense.category] ?? CATEGORY_CONFIG.outros;
   const Icon = cat.icon;
+
+  // Clear cached splits when period changes
+  useEffect(() => {
+    setSplits([]);
+    setExpanded(false);
+  }, [period]);
 
   async function loadSplits() {
     if (splits.length > 0) {
@@ -801,7 +953,7 @@ function AdminExpenseCard({ expense, period, onManage }: AdminExpenseCardProps) 
     setLoadingSplits(true);
     const { data } = await supabase
       .from('expense_splits')
-      .select('id, user_id, amount_due, status, paid_at, payment_proof_url, reference_period, user:profiles!user_id(full_name)')
+      .select('id, user_id, amount_due, status, paid_at, payment_proof_url, reference_period, installment_number, user:profiles!user_id(full_name)')
       .eq('expense_id', expense.id)
       .or(`reference_period.eq.${period},reference_period.is.null`)
       .order('status');
@@ -814,122 +966,241 @@ function AdminExpenseCard({ expense, period, onManage }: AdminExpenseCardProps) 
   const paidCount    = splits.filter(s => s.status === 'paid').length;
   const pendingCount = splits.filter(s => s.status === 'pending').length;
 
-  return (
-    <div className="bg-white rounded-xl border border-accent/10 shadow-card overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-start gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
-            <Icon className={`w-5 h-5 ${cat.color}`} />
-          </div>
+  const contractDays = daysToContractEnd(expense.contract_end_date);
+  const showContractWarning = contractDays !== null && contractDays <= 60;
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="font-semibold text-text truncate">{expense.title}</p>
-                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                  <span className="text-xs text-text-muted">{cat.label}</span>
-                  <span className="text-xs text-text-muted">·</span>
-                  <span className="text-xs text-text-muted flex items-center gap-1">
-                    <Repeat className="w-3 h-3" />
-                    {RECURRENCE_LABELS[expense.recurrence]}
-                    {expense.recurrence === 'monthly' && expense.due_day_of_month && (
-                      ` · dia ${expense.due_day_of_month}`
-                    )}
-                  </span>
-                  {expense.type === 'fixed' && (
-                    <>
-                      <span className="text-xs text-text-muted">·</span>
-                      <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
-                    </>
-                  )}
-                </div>
-              </div>
-              <p className="font-bold text-text text-lg whitespace-nowrap flex-shrink-0">
-                {formatCurrency(expense.amount)}
-              </p>
+  function ContractBadge() {
+    if (contractDays === null) return null;
+    if (contractDays < 0) return (
+      <span className="text-xs font-semibold text-red-600 px-2 py-0.5 bg-red-50 rounded-full border border-red-200">
+        Contrato vencido há {Math.abs(contractDays)} dia{Math.abs(contractDays) !== 1 ? 's' : ''}
+      </span>
+    );
+    if (contractDays <= 30) return (
+      <span className="text-xs font-semibold text-red-600 px-2 py-0.5 bg-red-50 rounded-full border border-red-200">
+        Contrato vence em {contractDays} dia{contractDays !== 1 ? 's' : ''}
+      </span>
+    );
+    if (contractDays <= 60) return (
+      <span className="text-xs font-semibold text-amber-700 px-2 py-0.5 bg-amber-50 rounded-full border border-amber-200">
+        Contrato vence em {contractDays} dias
+      </span>
+    );
+    return null;
+  }
+
+  return (
+    <>
+      <div className="bg-white rounded-xl border border-accent/10 shadow-card overflow-hidden">
+        {showContractWarning && (
+          <div className={`flex items-center gap-2 px-4 py-2 ${contractDays !== null && contractDays <= 30 ? 'bg-red-50 border-b border-red-100' : 'bg-amber-50 border-b border-amber-100'}`}>
+            <AlertTriangle className={`w-3.5 h-3.5 flex-shrink-0 ${contractDays !== null && contractDays <= 30 ? 'text-red-500' : 'text-amber-600'}`} />
+            <ContractBadge />
+          </div>
+        )}
+
+        <div className="p-4">
+          <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${cat.bgColor}`}>
+              <Icon className={`w-5 h-5 ${cat.color}`} />
             </div>
 
-            {/* Assignee avatars with per-person amount */}
-            {expense.expense_assignments.length > 0 && (
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex -space-x-1.5">
-                  {expense.expense_assignments.slice(0, 4).map(a => (
-                    <div
-                      key={a.user_id}
-                      title={a.user?.full_name ?? ''}
-                      className="w-6 h-6 rounded-full bg-primary/20 border-2 border-white flex items-center justify-center"
-                    >
-                      <span className="text-[10px] font-bold text-primary">
-                        {a.user?.full_name?.[0] ?? '?'}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-text truncate">{expense.title}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="text-xs text-text-muted">{cat.label}</span>
+                    <span className="text-xs text-text-muted">·</span>
+                    <span className="text-xs text-text-muted flex items-center gap-1">
+                      <Repeat className="w-3 h-3" />
+                      {RECURRENCE_LABELS[expense.recurrence]}
+                      {expense.recurrence === 'monthly' && expense.due_day_of_month && (
+                        ` · dia ${expense.due_day_of_month}`
+                      )}
+                      {expense.recurrence === 'installments' && expense.installments_count > 1 && (
+                        ` · ${expense.installments_count}x`
+                      )}
+                    </span>
+                    {expense.type === 'fixed' && (
+                      <>
+                        <span className="text-xs text-text-muted">·</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-medium">Fixo</span>
+                      </>
+                    )}
+                    {expense.type === 'variable' && (
+                      <>
+                        <span className="text-xs text-text-muted">·</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded font-medium">Variável</span>
+                      </>
+                    )}
+                  </div>
+                  {expense.recurrence === 'monthly' && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Calendar className="w-3 h-3 text-text-muted" />
+                      <span className="text-xs text-text-muted capitalize">
+                        Desde {periodLabel(expense.effective_from.substring(0, 7))}
                       </span>
                     </div>
-                  ))}
-                  {expense.expense_assignments.length > 4 && (
-                    <div className="w-6 h-6 rounded-full bg-accent/20 border-2 border-white flex items-center justify-center">
-                      <span className="text-[10px] font-medium text-text-muted">
-                        +{expense.expense_assignments.length - 4}
+                  )}
+                  {expense.contract_end_date && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <Calendar className="w-3 h-3 text-text-muted" />
+                      <span className="text-xs text-text-muted">
+                        Contrato até {formatDate(expense.contract_end_date)}
                       </span>
                     </div>
                   )}
                 </div>
-                <span className="text-xs text-text-muted">
-                  {expense.expense_assignments.length} responsável{expense.expense_assignments.length !== 1 ? 'is' : ''}
-                  {' · '}{formatCurrency(expense.amount / expense.expense_assignments.length)} cada
+                <p className="font-bold text-text text-lg whitespace-nowrap flex-shrink-0">
+                  {formatCurrency(expense.amount)}
+                </p>
+              </div>
+
+              {/* Assignee avatars */}
+              {expense.expense_assignments.length > 0 && (
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="flex -space-x-1.5">
+                    {expense.expense_assignments.slice(0, 4).map(a => (
+                      <div
+                        key={a.user_id}
+                        title={a.user?.full_name ?? ''}
+                        className="w-6 h-6 rounded-full bg-primary/20 border-2 border-white flex items-center justify-center"
+                      >
+                        <span className="text-[10px] font-bold text-primary">
+                          {a.user?.full_name?.[0] ?? '?'}
+                        </span>
+                      </div>
+                    ))}
+                    {expense.expense_assignments.length > 4 && (
+                      <div className="w-6 h-6 rounded-full bg-accent/20 border-2 border-white flex items-center justify-center">
+                        <span className="text-[10px] font-medium text-text-muted">
+                          +{expense.expense_assignments.length - 4}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-text-muted">
+                    {(() => {
+                      const firstNames = expense.expense_assignments.map(
+                        a => a.user?.full_name?.split(' ')[0] ?? '?'
+                      );
+                      const shown = firstNames.slice(0, 3).join(', ');
+                      const extra = firstNames.length > 3 ? ` +${firstNames.length - 3}` : '';
+                      return shown + extra;
+                    })()}
+                    {' · '}{formatCurrency(expense.amount / expense.expense_assignments.length)} cada
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Footer actions */}
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={loadSplits}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-champagne-nuvem hover:bg-accent/20 rounded-lg text-sm text-text transition-colors border border-accent/10"
+            >
+              {loadingSplits ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  {expanded ? 'Ocultar' : 'Ver pagamentos'}
+                </>
+              )}
+            </button>
+
+            {isSuperAdmin && expense.category === 'aluguel' && expense.contract_end_date && (
+              <button
+                onClick={() => setShowAdjustment(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-violet-700 hover:bg-violet-50 rounded-lg text-sm transition-colors border border-violet-200"
+              >
+                <Percent className="w-3.5 h-3.5" />
+                Reajuste
+              </button>
+            )}
+
+            {expense.type === 'variable' && (
+              <button
+                onClick={() => setShowUpdateAmount(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-primary hover:bg-primary/10 rounded-lg text-sm transition-colors border border-primary/20"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Valor
+              </button>
+            )}
+
+            <button
+              onClick={onManage}
+              className="px-3 py-2 text-text-muted hover:bg-champagne-nuvem rounded-lg text-sm transition-colors border border-accent/10"
+            >
+              Gerenciar
+            </button>
+          </div>
+        </div>
+
+        {/* Expanded splits */}
+        {expanded && splits.length > 0 && (
+          <div className="border-t border-accent/10 px-4 py-3 space-y-1.5 bg-champagne-nuvem/50">
+            <p className="text-xs font-medium text-text-muted mb-2">
+              {periodLabel(period)} — {paidCount} pago{paidCount !== 1 ? 's' : ''}, {pendingCount} pendente{pendingCount !== 1 ? 's' : ''}
+            </p>
+            {splits.map(s => (
+              <div key={s.id} className="flex items-center gap-3 py-1">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'paid' ? 'bg-green-400' : 'bg-orange-400'}`} />
+                <span className="text-sm text-text flex-1">{s.user?.full_name ?? '—'}</span>
+                {expense.recurrence === 'installments' && s.installment_number !== null && (
+                  <span className="text-xs text-violet-600 font-medium">
+                    {s.installment_number}/{expense.installments_count}
+                  </span>
+                )}
+                <span className="text-sm font-medium text-text">{formatCurrency(s.amount_due)}</span>
+                <span className={`text-xs font-medium ${s.status === 'paid' ? 'text-green-600' : 'text-orange-500'}`}>
+                  {s.status === 'paid' ? 'Pago' : 'Pendente'}
                 </span>
               </div>
-            )}
+            ))}
           </div>
-        </div>
+        )}
 
-        {/* Footer actions */}
-        <div className="flex items-center gap-2 mt-3">
-          <button
-            onClick={loadSplits}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-champagne-nuvem hover:bg-accent/20 rounded-lg text-sm text-text transition-colors border border-accent/10"
-          >
-            {loadingSplits ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <>
-                {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                {expanded ? 'Ocultar' : 'Ver pagamentos'}
-              </>
-            )}
-          </button>
-          <button
-            onClick={onManage}
-            className="px-3 py-2 text-text-muted hover:bg-champagne-nuvem rounded-lg text-sm transition-colors border border-accent/10"
-          >
-            Gerenciar
-          </button>
-        </div>
+        {expanded && splits.length === 0 && !loadingSplits && (
+          <div className="border-t border-accent/10 px-4 py-3 bg-champagne-nuvem/50">
+            <p className="text-xs text-text-muted text-center">Sem pagamentos para este período</p>
+          </div>
+        )}
       </div>
 
-      {/* Expanded splits */}
-      {expanded && splits.length > 0 && (
-        <div className="border-t border-accent/10 px-4 py-3 space-y-1.5 bg-champagne-nuvem/50">
-          <p className="text-xs font-medium text-text-muted mb-2">
-            {periodLabel(period)} — {paidCount} pago{paidCount !== 1 ? 's' : ''}, {pendingCount} pendente{pendingCount !== 1 ? 's' : ''}
-          </p>
-          {splits.map(s => (
-            <div key={s.id} className="flex items-center gap-3 py-1">
-              <div className={`w-2 h-2 rounded-full flex-shrink-0 ${s.status === 'paid' ? 'bg-green-400' : 'bg-orange-400'}`} />
-              <span className="text-sm text-text flex-1">{s.user?.full_name ?? '—'}</span>
-              <span className="text-sm font-medium text-text">{formatCurrency(s.amount_due)}</span>
-              <span className={`text-xs font-medium ${s.status === 'paid' ? 'text-green-600' : 'text-orange-500'}`}>
-                {s.status === 'paid' ? 'Pago' : 'Pendente'}
-              </span>
-            </div>
-          ))}
-        </div>
+      {showUpdateAmount && (
+        <UpdateAmountSheet
+          expenseId={expense.id}
+          period={period}
+          currentAmount={expense.amount}
+          title={expense.title}
+          onClose={() => setShowUpdateAmount(false)}
+          onSuccess={() => {
+            setShowUpdateAmount(false);
+            setSplits([]);
+            setExpanded(false);
+            onRefresh();
+          }}
+          showToast={showToast}
+        />
       )}
 
-      {expanded && splits.length === 0 && !loadingSplits && (
-        <div className="border-t border-accent/10 px-4 py-3 bg-champagne-nuvem/50">
-          <p className="text-xs text-text-muted text-center">Sem pagamentos para este período</p>
-        </div>
+      {showAdjustment && (
+        <AdjustmentSheet
+          expense={expense}
+          onClose={() => setShowAdjustment(false)}
+          onSuccess={() => {
+            setShowAdjustment(false);
+            onRefresh();
+          }}
+          showToast={showToast}
+        />
       )}
-    </div>
+    </>
   );
 }
 
@@ -972,8 +1243,34 @@ function ExpenseDetailSheet({ expense, onClose, onDeactivate, onEdit }: ExpenseD
             </div>
             <div>
               <p className="text-xs text-text-muted">Recorrência</p>
-              <p className="font-medium text-text">{RECURRENCE_LABELS[expense.recurrence]}</p>
+              <p className="font-medium text-text">
+                {RECURRENCE_LABELS[expense.recurrence]}
+                {expense.recurrence === 'installments' && expense.installments_count > 1 && ` (${expense.installments_count}x)`}
+              </p>
             </div>
+            {expense.recurrence === 'monthly' && (
+              <div className="col-span-2">
+                <p className="text-xs text-text-muted">Vigência a partir de</p>
+                <p className="font-medium text-text capitalize">
+                  {periodLabel(expense.effective_from.substring(0, 7))}
+                </p>
+              </div>
+            )}
+            {expense.contract_end_date && (
+              <div className="col-span-2">
+                <p className="text-xs text-text-muted">Término do contrato</p>
+                <p className="font-medium text-text">{formatDate(expense.contract_end_date)}</p>
+              </div>
+            )}
+            {expense.adjustment_index && (
+              <div className="col-span-2">
+                <p className="text-xs text-text-muted">Último reajuste</p>
+                <p className="font-medium text-text">
+                  {expense.adjustment_index.toUpperCase()}
+                  {expense.adjustment_value && ` · ${expense.adjustment_value}%`}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1164,6 +1461,11 @@ function PaySplitSheet({ split, onClose, onSuccess, showToast }: PaySplitSheetPr
             <div>
               <p className="font-semibold text-text">{split.expense.title}</p>
               <p className="text-xs text-text-muted">{cat.label} · {RECURRENCE_LABELS[split.expense.recurrence]}</p>
+              {split.installment_number !== null && split.expense.installments_count > 1 && (
+                <p className="text-xs text-violet-600 font-medium">
+                  Parcela {split.installment_number}/{split.expense.installments_count}
+                </p>
+              )}
             </div>
             <p className="ml-auto text-2xl font-bold text-text">
               {formatCurrency(split.amount_due)}
@@ -1313,6 +1615,15 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
   const [recurrence, setRecurrence] = useState<ExpenseRecurrence>('once');
   const [dueDayOfMonth, setDueDayOfMonth] = useState('5');
   const [dueDate, setDueDate] = useState('');
+  const [installmentsCount, setInstallmentsCount] = useState(2);
+  const [contractEndDate, setContractEndDate] = useState('');
+  const [adjustmentIndex, setAdjustmentIndex] = useState('');
+  const [adjustmentValue, setAdjustmentValue] = useState('');
+  // Início de vigência: mês a partir do qual splits são gerados (padrão: mês atual)
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -1362,6 +1673,9 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
   function amountPerUser(): string {
     const n = parseFloat(amount);
     if (!n || selectedUserIds.length === 0) return '—';
+    if (recurrence === 'installments') {
+      return formatCurrency(n / installmentsCount / selectedUserIds.length);
+    }
     return formatCurrency(n / selectedUserIds.length);
   }
 
@@ -1372,6 +1686,9 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
     if (recurrence !== 'monthly' && !dueDate) return showToast('error', 'Informe a data de vencimento', '');
     if (recurrence === 'monthly' && (!dueDayOfMonth || parseInt(dueDayOfMonth) < 1 || parseInt(dueDayOfMonth) > 28)) {
       return showToast('error', 'Dia inválido', 'Informe um dia entre 1 e 28.');
+    }
+    if (recurrence === 'installments' && installmentsCount < 2) {
+      return showToast('error', 'Parcelas inválidas', 'Informe pelo menos 2 parcelas.');
     }
 
     setLoading(true);
@@ -1386,6 +1703,13 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
         p_user_ids: selectedUserIds,
         p_due_day_of_month: recurrence === 'monthly' ? parseInt(dueDayOfMonth) : null,
         p_due_date: recurrence !== 'monthly' ? dueDate : null,
+        p_installments_count: recurrence === 'installments' ? installmentsCount : 1,
+        p_contract_end_date: contractEndDate || null,
+        p_adjustment_index: adjustmentIndex || null,
+        p_adjustment_value: adjustmentValue ? parseFloat(adjustmentValue) : null,
+        // Para mensais: converte "YYYY-MM" → "YYYY-MM-01"
+        // Para outros: null (a função usa o due_date como effective_from)
+        p_effective_from: recurrence === 'monthly' ? `${effectiveFrom}-01` : null,
       });
 
       if (error) throw error;
@@ -1398,6 +1722,13 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
       setLoading(false);
     }
   }
+
+  const ADJUSTMENT_INDICES = [
+    { value: 'igpm', label: 'IGPM' },
+    { value: 'ipca', label: 'IPCA' },
+    { value: 'inpc', label: 'INPC' },
+    { value: 'fixed', label: 'Fixo' },
+  ] as const;
 
   return (
     <BottomSheet isOpen title="Nova Despesa" onClose={onClose}>
@@ -1459,17 +1790,19 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
           </div>
         </div>
 
-        {/* Recurrence */}
+        {/* Recurrence — 2x2 grid */}
         <div>
           <label className="block text-sm font-medium text-text mb-1.5">Recorrência</label>
-          <div className="flex bg-champagne-nuvem rounded-xl p-1 border border-accent/15">
-            {(['once', 'monthly', 'yearly'] as ExpenseRecurrence[]).map(r => (
+          <div className="grid grid-cols-2 gap-2">
+            {(['once', 'monthly', 'yearly', 'installments'] as ExpenseRecurrence[]).map(r => (
               <button
                 key={r}
                 type="button"
                 onClick={() => setRecurrence(r)}
-                className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors ${
-                  recurrence === r ? 'bg-primary text-white shadow-soft' : 'text-text-muted hover:text-text'
+                className={`py-2.5 text-sm font-medium rounded-xl border transition-colors ${
+                  recurrence === r
+                    ? 'bg-primary text-white border-primary shadow-soft'
+                    : 'bg-champagne-nuvem border-accent/15 text-text-muted hover:border-accent/30'
                 }`}
               >
                 {RECURRENCE_LABELS[r]}
@@ -1478,22 +1811,76 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
           </div>
         </div>
 
-        {/* Due date */}
+        {/* Due date / installment fields */}
         {recurrence === 'monthly' ? (
-          <div>
-            <label className="block text-sm font-medium text-text mb-1.5">Dia de vencimento *</label>
-            <input
-              type="number"
-              min="1"
-              max="28"
-              value={dueDayOfMonth}
-              onChange={e => setDueDayOfMonth(e.target.value)}
-              placeholder="Ex: 5"
-              className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
-              disabled={loading}
-            />
-            <p className="text-xs text-text-muted mt-1">Dia do mês em que vence (1 a 28)</p>
-          </div>
+          <>
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">Dia de vencimento *</label>
+              <input
+                type="number"
+                min="1"
+                max="28"
+                value={dueDayOfMonth}
+                onChange={e => setDueDayOfMonth(e.target.value)}
+                placeholder="Ex: 5"
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                disabled={loading}
+              />
+              <p className="text-xs text-text-muted mt-1">Dia do mês em que vence (1 a 28)</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">Início da vigência *</label>
+              <input
+                type="month"
+                value={effectiveFrom}
+                onChange={e => setEffectiveFrom(e.target.value)}
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                disabled={loading}
+              />
+              <p className="text-xs text-text-muted mt-1">
+                Splits gerados somente a partir deste mês — sem cobranças retroativas
+              </p>
+            </div>
+          </>
+        ) : recurrence === 'installments' ? (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">Data do 1º vencimento *</label>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={e => setDueDate(e.target.value)}
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text mb-1.5">Número de parcelas *</label>
+              <input
+                type="number"
+                min="2"
+                max="60"
+                value={installmentsCount}
+                onChange={e => setInstallmentsCount(Math.max(2, parseInt(e.target.value) || 2))}
+                className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+                disabled={loading}
+              />
+              <p className="text-xs text-text-muted mt-1">Mínimo 2, máximo 60 parcelas</p>
+            </div>
+            {dueDate && amount && parseFloat(amount) > 0 && installmentsCount >= 2 && (
+              <div className="px-4 py-3 bg-violet-50 rounded-xl border border-violet-200">
+                <p className="text-sm font-medium text-violet-700">Prévia do parcelamento</p>
+                <p className="text-sm text-violet-600 mt-0.5">
+                  {installmentsCount}x de {formatCurrency(parseFloat(amount) / installmentsCount)}
+                  {selectedUserIds.length > 1 && (
+                    <span className="text-xs ml-1">
+                      ({formatCurrency(parseFloat(amount) / installmentsCount / selectedUserIds.length)} por responsável)
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </>
         ) : (
           <div>
             <label className="block text-sm font-medium text-text mb-1.5">Data de vencimento *</label>
@@ -1534,6 +1921,76 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
             })}
           </div>
         </div>
+
+        {/* Contract section — shown when category is aluguel */}
+        {category === 'aluguel' && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-3">
+            <p className="text-sm font-semibold text-blue-700 flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              Contrato (opcional)
+            </p>
+
+            <div>
+              <label className="block text-xs font-medium text-blue-700 mb-1">Data de término</label>
+              <input
+                type="date"
+                value={contractEndDate}
+                onChange={e => setContractEndDate(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-text text-sm"
+                disabled={loading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-blue-700 mb-1">Índice de reajuste</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAdjustmentIndex('')}
+                  className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                    adjustmentIndex === ''
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white border-blue-200 text-blue-700 hover:border-blue-400'
+                  }`}
+                >
+                  —
+                </button>
+                {ADJUSTMENT_INDICES.map(idx => (
+                  <button
+                    key={idx.value}
+                    type="button"
+                    onClick={() => setAdjustmentIndex(idx.value)}
+                    className={`flex-1 py-2 text-xs font-medium rounded-lg border transition-colors ${
+                      adjustmentIndex === idx.value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white border-blue-200 text-blue-700 hover:border-blue-400'
+                    }`}
+                  >
+                    {idx.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {adjustmentIndex && (
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">% estimado de reajuste</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={adjustmentValue}
+                    onChange={e => setAdjustmentValue(e.target.value)}
+                    placeholder="Ex: 5,5"
+                    className="w-full px-3 py-2.5 pr-8 bg-white border border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 text-text text-sm"
+                    disabled={loading}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 text-sm font-medium">%</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Description */}
         <div>
@@ -1603,7 +2060,9 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
 
           {selectedUserIds.length > 0 && amount && parseFloat(amount) > 0 && (
             <div className="mt-3 flex items-center justify-between px-4 py-3 bg-primary/10 rounded-xl border border-primary/20">
-              <span className="text-sm text-text font-medium">Valor por pessoa</span>
+              <span className="text-sm text-text font-medium">
+                {recurrence === 'installments' ? 'Por parcela / responsável' : 'Valor por pessoa'}
+              </span>
               <span className="text-sm font-bold text-primary">{amountPerUser()}</span>
             </div>
           )}
@@ -1649,9 +2108,12 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
   const [amount, setAmount] = useState(String(expense.amount));
   const [type, setType] = useState<ExpenseType>(expense.type);
   const [category, setCategory] = useState<ExpenseCategory>(expense.category);
-  const [recurrence] = useState<ExpenseRecurrence>(expense.recurrence); // recurrence is read-only after creation
+  const [recurrence] = useState<ExpenseRecurrence>(expense.recurrence);
   const [dueDayOfMonth, setDueDayOfMonth] = useState(String(expense.due_day_of_month ?? '5'));
   const [dueDate, setDueDate] = useState(expense.due_date ?? '');
+  const [contractEndDate, setContractEndDate] = useState(expense.contract_end_date ?? '');
+  // effective_from no formato "YYYY-MM" para o input type="month"
+  const [effectiveFrom, setEffectiveFrom] = useState(expense.effective_from.substring(0, 7));
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>(
     expense.expense_assignments.map(a => a.user_id)
@@ -1703,7 +2165,9 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
     if (!title.trim()) return showToast('error', 'Título obrigatório', '');
     if (!amount || parseFloat(amount) <= 0) return showToast('error', 'Valor inválido', '');
     if (selectedUserIds.length === 0) return showToast('error', 'Selecione ao menos um responsável', '');
-    if (recurrence !== 'monthly' && !dueDate) return showToast('error', 'Informe a data de vencimento', '');
+    if (recurrence !== 'monthly' && recurrence !== 'installments' && !dueDate) {
+      return showToast('error', 'Informe a data de vencimento', '');
+    }
     if (recurrence === 'monthly' && (!dueDayOfMonth || parseInt(dueDayOfMonth) < 1 || parseInt(dueDayOfMonth) > 28)) {
       return showToast('error', 'Dia inválido', 'Informe um dia entre 1 e 28.');
     }
@@ -1719,7 +2183,9 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
           type,
           category,
           due_day_of_month: recurrence === 'monthly' ? parseInt(dueDayOfMonth) : null,
-          due_date: recurrence !== 'monthly' ? dueDate : null,
+          due_date: recurrence !== 'monthly' && recurrence !== 'installments' ? dueDate : undefined,
+          contract_end_date: contractEndDate || null,
+          effective_from: recurrence === 'monthly' ? `${effectiveFrom}-01` : undefined,
         })
         .eq('id', expense.id);
 
@@ -1803,11 +2269,14 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
         <div className="flex items-center gap-2 px-4 py-3 bg-champagne-nuvem rounded-xl border border-accent/15">
           <Repeat className="w-4 h-4 text-text-muted" />
           <span className="text-sm text-text-muted">Recorrência:</span>
-          <span className="text-sm font-medium text-text">{RECURRENCE_LABELS[recurrence]}</span>
+          <span className="text-sm font-medium text-text">
+            {RECURRENCE_LABELS[recurrence]}
+            {recurrence === 'installments' && expense.installments_count > 1 && ` (${expense.installments_count}x)`}
+          </span>
           <span className="ml-auto text-xs text-text-muted italic">não editável</span>
         </div>
 
-        {/* Due date */}
+        {/* Due date — hidden for installments (already set) */}
         {recurrence === 'monthly' ? (
           <div>
             <label className="block text-sm font-medium text-text mb-1.5">Dia de vencimento *</label>
@@ -1822,7 +2291,7 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
             />
             <p className="text-xs text-text-muted mt-1">Dia do mês em que vence (1 a 28)</p>
           </div>
-        ) : (
+        ) : recurrence !== 'installments' ? (
           <div>
             <label className="block text-sm font-medium text-text mb-1.5">Data de vencimento *</label>
             <input
@@ -1833,7 +2302,38 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
               disabled={loading}
             />
           </div>
+        ) : null}
+
+        {/* Effective from — editável apenas para mensais */}
+        {recurrence === 'monthly' && (
+          <div>
+            <label className="block text-sm font-medium text-text mb-1.5">Início da vigência</label>
+            <input
+              type="month"
+              value={effectiveFrom}
+              onChange={e => setEffectiveFrom(e.target.value)}
+              className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+              disabled={loading}
+            />
+            <p className="text-xs text-text-muted mt-1">
+              Splits gerados somente a partir deste mês
+            </p>
+          </div>
         )}
+
+        {/* Contract end date — editable */}
+        <div>
+          <label className="block text-sm font-medium text-text mb-1.5">
+            Data de término do contrato <span className="text-text-muted font-normal">(opcional)</span>
+          </label>
+          <input
+            type="date"
+            value={contractEndDate}
+            onChange={e => setContractEndDate(e.target.value)}
+            className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+            disabled={loading}
+          />
+        </div>
 
         {/* Category */}
         <div>
@@ -1951,6 +2451,248 @@ function EditExpenseSheet({ expense, onClose, onSuccess, showToast }: EditExpens
             className="flex-1 py-3.5 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar Alterações'}
+          </button>
+        </div>
+      </div>
+    </BottomSheet>
+  );
+}
+
+// ─── UpdateAmountSheet ────────────────────────────────────────────────────────
+
+interface UpdateAmountSheetProps {
+  expenseId: string;
+  period: string;
+  currentAmount: number;
+  title: string;
+  onClose: () => void;
+  onSuccess: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+}
+
+function UpdateAmountSheet({ expenseId, period, currentAmount, title, onClose, onSuccess, showToast }: UpdateAmountSheetProps) {
+  const [newAmount, setNewAmount] = useState(String(currentAmount));
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit() {
+    const val = parseFloat(newAmount);
+    if (!val || val <= 0) return showToast('error', 'Valor inválido', '');
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.rpc('update_period_expense_amount', {
+        p_expense_id: expenseId,
+        p_period: period,
+        p_new_amount: val,
+      });
+      if (error) throw error;
+      showToast('success', 'Valor atualizado!', `${title} atualizada para ${formatCurrency(val)}.`);
+      onSuccess();
+    } catch (err) {
+      showToast('error', 'Erro', err instanceof Error ? err.message : 'Não foi possível atualizar.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <BottomSheet isOpen title="Atualizar Valor" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="bg-champagne-nuvem rounded-xl p-4">
+          <p className="font-semibold text-text">{title}</p>
+          <p className="text-sm text-text-muted mt-0.5 capitalize">Período: {periodLabel(period)}</p>
+          <p className="text-sm text-text-muted mt-0.5">Valor atual: {formatCurrency(currentAmount)}</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-text mb-1.5">Novo valor total (R$) *</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted font-medium">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newAmount}
+              onChange={e => setNewAmount(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+              disabled={loading}
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-1">O valor será dividido igualmente entre os responsáveis.</p>
+        </div>
+
+        <div className="flex gap-3 pb-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 py-3.5 border border-accent/20 text-text hover:bg-champagne-nuvem rounded-xl font-medium transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-3.5 bg-primary hover:bg-primary-hover text-white rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Salvar'}
+          </button>
+        </div>
+      </div>
+    </BottomSheet>
+  );
+}
+
+// ─── AdjustmentSheet ──────────────────────────────────────────────────────────
+
+interface AdjustmentSheetProps {
+  expense: AdminExpense;
+  onClose: () => void;
+  onSuccess: () => void;
+  showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+}
+
+function AdjustmentSheet({ expense, onClose, onSuccess, showToast }: AdjustmentSheetProps) {
+  const [adjustmentIndex, setAdjustmentIndex] = useState<'igpm' | 'ipca' | 'inpc' | 'fixed'>('igpm');
+  const [adjustmentPercent, setAdjustmentPercent] = useState('');
+  const [newAmount, setNewAmount] = useState(String(expense.amount));
+  const [loading, setLoading] = useState(false);
+
+  function handlePercentChange(val: string) {
+    setAdjustmentPercent(val);
+    const pct = parseFloat(val);
+    if (!isNaN(pct)) {
+      const calculated = expense.amount * (1 + pct / 100);
+      setNewAmount(calculated.toFixed(2));
+    }
+  }
+
+  async function handleSubmit() {
+    const val = parseFloat(newAmount);
+    if (!val || val <= 0) return showToast('error', 'Valor inválido', '');
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.rpc('apply_expense_adjustment', {
+        p_expense_id: expense.id,
+        p_new_amount: val,
+        p_adjustment_index: adjustmentIndex,
+        p_adjustment_value: parseFloat(adjustmentPercent) || 0,
+      });
+      if (error) throw error;
+      showToast('success', 'Reajuste aplicado!', `${expense.title} reajustada para ${formatCurrency(val)}.`);
+      onSuccess();
+    } catch (err) {
+      showToast('error', 'Erro', err instanceof Error ? err.message : 'Não foi possível aplicar o reajuste.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const INDICES = [
+    { value: 'igpm' as const, label: 'IGPM' },
+    { value: 'ipca' as const, label: 'IPCA' },
+    { value: 'inpc' as const, label: 'INPC' },
+    { value: 'fixed' as const, label: 'Fixo' },
+  ];
+
+  const userCount = expense.expense_assignments.length;
+
+  return (
+    <BottomSheet isOpen title="Aplicar Reajuste" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="bg-champagne-nuvem rounded-xl p-4">
+          <p className="font-semibold text-text">{expense.title}</p>
+          <p className="text-sm text-text-muted mt-0.5">Valor atual: {formatCurrency(expense.amount)}</p>
+          {userCount > 0 && (
+            <p className="text-sm text-text-muted mt-0.5">
+              {userCount} responsável{userCount !== 1 ? 'is' : ''} · {formatCurrency(expense.amount / userCount)} cada
+            </p>
+          )}
+        </div>
+
+        {/* Índice */}
+        <div>
+          <label className="block text-sm font-medium text-text mb-1.5">Índice de reajuste</label>
+          <div className="grid grid-cols-4 gap-2">
+            {INDICES.map(idx => (
+              <button
+                key={idx.value}
+                type="button"
+                onClick={() => setAdjustmentIndex(idx.value)}
+                className={`py-2.5 text-sm font-medium rounded-xl border transition-colors ${
+                  adjustmentIndex === idx.value
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-champagne-nuvem border-accent/15 text-text-muted hover:border-accent/30'
+                }`}
+              >
+                {idx.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Percentual */}
+        <div>
+          <label className="block text-sm font-medium text-text mb-1.5">Percentual aplicado (%)</label>
+          <div className="relative">
+            <input
+              type="number"
+              step="0.01"
+              value={adjustmentPercent}
+              onChange={e => handlePercentChange(e.target.value)}
+              placeholder="Ex: 5,5"
+              className="w-full px-4 py-3 pr-10 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+              disabled={loading}
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-text-muted font-medium">%</span>
+          </div>
+        </div>
+
+        {/* Novo valor */}
+        <div>
+          <label className="block text-sm font-medium text-text mb-1.5">Novo valor total (R$) *</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted font-medium">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newAmount}
+              onChange={e => setNewAmount(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
+              disabled={loading}
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-1">Calculado automaticamente. Edite manualmente se necessário.</p>
+        </div>
+
+        {parseFloat(newAmount) > 0 && userCount > 0 && (
+          <div className="flex items-center justify-between px-4 py-3 bg-violet-50 rounded-xl border border-violet-200">
+            <span className="text-sm text-text font-medium">Novo valor por responsável</span>
+            <span className="text-sm font-bold text-violet-700">
+              {formatCurrency(parseFloat(newAmount) / userCount)}
+            </span>
+          </div>
+        )}
+
+        <div className="flex gap-3 pb-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 py-3.5 border border-accent/20 text-text hover:bg-champagne-nuvem rounded-xl font-medium transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-3.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Aplicar Reajuste'}
           </button>
         </div>
       </div>

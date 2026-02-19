@@ -8,6 +8,7 @@ interface Profile {
   full_name: string;
   role: 'super_admin' | 'user';
   is_active: boolean;
+  tenant_id: string;
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   isSuperAdmin: boolean;
+  tenantId: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -94,47 +96,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signUp(email: string, password: string, fullName: string) {
     try {
-
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: {
-          emailRedirectTo: window.location.origin,
-        },
+        options: { emailRedirectTo: window.location.origin },
       });
 
-      if (signUpError) {
-        throw signUpError;
-      }
+      if (signUpError) throw signUpError;
+      if (!authData.user) throw new Error('Falha ao criar usuário');
 
-      if (!authData.user) {
-        throw new Error('Falha ao criar usuário');
-      }
-
-
-      const { count } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true });
-
-      const isFirstUser = count === 0;
-
+      // Usa RPC SECURITY DEFINER para criar perfil com tenant_id correto.
+      // Resolve o bootstrap: primeiro usuário cria tenant + super_admin;
+      // demais usuários entram no tenant existente como usuário regular.
       const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: authData.user.id,
-          email: email,
-          full_name: fullName,
-          role: isFirstUser ? 'super_admin' : 'user',
-          is_active: true,
-        });
+        .rpc('register_user_profile', { p_full_name: fullName, p_email: email });
 
-      if (profileError) {
-        throw new Error('Erro ao criar perfil: ' + profileError.message);
-      }
-
+      if (profileError) throw new Error('Erro ao criar perfil: ' + profileError.message);
 
       await loadProfile(authData.user.id);
-
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -147,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const isSuperAdmin = profile?.role === 'super_admin';
+  const tenantId = profile?.tenant_id ?? null;
 
   const value = {
     user,
@@ -157,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signUp,
     signOut,
     isSuperAdmin,
+    tenantId,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
