@@ -57,10 +57,11 @@ CREATE POLICY "Super admin manages profiles" ON profiles
 
 SELECT _drop_all_policies('patients');
 
-CREATE POLICY "User manages own patients" ON patients
+-- Pacientes são da clínica (tenant): todos os usuários autenticados do tenant podem gerenciar
+CREATE POLICY "Tenant users manage patients" ON patients
   FOR ALL TO authenticated
-  USING  (tenant_id = auth_tenant_id() AND (professional_id = auth.uid() OR is_super_admin()))
-  WITH CHECK (tenant_id = auth_tenant_id() AND (professional_id = auth.uid() OR is_super_admin()));
+  USING  (tenant_id = auth_tenant_id())
+  WITH CHECK (tenant_id = auth_tenant_id());
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- 3. procedures

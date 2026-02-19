@@ -15,7 +15,7 @@ interface Patient {
 }
 
 export default function Patients() {
-  const { user, isSuperAdmin } = useAuth();
+  const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -23,17 +23,14 @@ export default function Patients() {
 
   useEffect(() => {
     loadPatients();
-  }, [user, isSuperAdmin]);
+  }, [user]);
 
   async function loadPatients() {
     try {
-      let query = supabase.from('patients').select('*').order('full_name');
-
-      if (!isSuperAdmin && user) {
-        query = query.eq('professional_id', user.id);
-      }
-
-      const { data, error } = await query;
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('full_name');
 
       if (error) throw error;
       setPatients(data || []);
@@ -62,9 +59,7 @@ export default function Patients() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text">Pacientes</h1>
-          <p className="text-text-muted mt-1">
-            {isSuperAdmin ? 'Todos os pacientes da clínica' : 'Seus pacientes'}
-          </p>
+          <p className="text-text-muted mt-1">Todos os pacientes da clínica</p>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
