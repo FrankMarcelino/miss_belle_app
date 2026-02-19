@@ -1619,11 +1619,18 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
   const [contractEndDate, setContractEndDate] = useState('');
   const [adjustmentIndex, setAdjustmentIndex] = useState('');
   const [adjustmentValue, setAdjustmentValue] = useState('');
-  // Início de vigência: mês a partir do qual splits são gerados (padrão: mês atual)
-  const [effectiveFrom, setEffectiveFrom] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  });
+  // Início de vigência: mês a partir do qual splits são gerados.
+  // Se o dia de vencimento deste mês já passou → próximo mês; caso contrário → mês atual.
+  function smartEffectiveFrom(dayStr: string): string {
+    const day = Math.min(parseInt(dayStr) || 1, 28);
+    const today = new Date();
+    const dueThisMonth = new Date(today.getFullYear(), today.getMonth(), day);
+    const base = today > dueThisMonth
+      ? new Date(today.getFullYear(), today.getMonth() + 1, 1)
+      : new Date(today.getFullYear(), today.getMonth(), 1);
+    return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}`;
+  }
+  const [effectiveFrom, setEffectiveFrom] = useState<string>(() => smartEffectiveFrom('5'));
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -1821,7 +1828,10 @@ function CreateExpenseSheet({ onClose, onSuccess, showToast }: CreateExpenseShee
                 min="1"
                 max="28"
                 value={dueDayOfMonth}
-                onChange={e => setDueDayOfMonth(e.target.value)}
+                onChange={e => {
+                  setDueDayOfMonth(e.target.value);
+                  setEffectiveFrom(smartEffectiveFrom(e.target.value));
+                }}
                 placeholder="Ex: 5"
                 className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary text-text"
                 disabled={loading}
