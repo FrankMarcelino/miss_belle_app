@@ -524,12 +524,17 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       };
       if (reason) updateData.notes = reason;
 
-      const { error } = await supabase
+      const { data: updated, error } = await supabase
         .from('cash_register_closings')
         .update(updateData)
-        .eq('id', currentClosing.id);
+        .eq('id', currentClosing.id)
+        .select('id');
 
       if (error) throw error;
+
+      if (!updated || updated.length === 0) {
+        throw new Error('Permissão negada. Verifique se você tem acesso para finalizar este fechamento.');
+      }
 
       setShowFinalizeSheet(false);
       onUpdate();
