@@ -840,44 +840,85 @@ function AppointmentDetailsContent({
   const [cancellationReason, setCancellationReason] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
-  const [relatedClosing, setRelatedClosing] = useState<{ id: string; is_finalized: boolean; notes: string | null } | null>(null);
   const [showReopenSheet, setShowReopenSheet] = useState(false);
   const [reopening, setReopening] = useState(false);
+  const [loadingReopen, setLoadingReopen] = useState(false);
+  const [reopeningClosing, setReopeningClosing] = useState<{ id: string; notes: string | null } | null>(null);
 
-  useEffect(() => {
-    if (appointment.status === 'completed') {
-      loadRelatedClosing();
-    }
-  }, [appointment.id, appointment.status]);
-
-  async function loadRelatedClosing() {
+  async function handleReopenClick() {
+    setLoadingReopen(true);
     try {
-      // Busca direta por professional_id + data — não depende de RLS de cash_register_transactions
-      const { data: closing } = await supabase
-        .from('cash_register_closings')
-        .select('id, is_finalized, notes')
-        .eq('professional_id', appointment.professional_id)
-        .eq('closing_date', appointment.appointment_date)
-        .maybeSingle();
+      // Tenta encontrar o fechamento via transação vinculada ao agendamento
+      // Usa limit(1) pois pode haver múltiplas transações (pagamento dividido em formas)
+      const { data: txRows } = await supabase
+        .from('cash_register_transactions')
+        .select('closing_id')
+        .eq('appointment_id', appointment.id)
+        .limit(1);
+      const txRow = txRows?.[0] ?? null;
 
-      if (closing) setRelatedClosing(closing);
-    } catch {
+      let closing: { id: string; is_finalized: boolean; notes: string | null; closing_date?: string } | null = null;
+
+      if (txRow?.closing_id) {
+        const { data } = await supabase
+          .from('cash_register_closings')
+          .select('id, is_finalized, notes, closing_date')
+          .eq('id', txRow.closing_id)
+          .maybeSingle();
+        closing = data ?? null;
+      }
+
+      // Fallback: busca por professional_id + data do agendamento
+      if (!closing) {
+        const { data } = await supabase
+          .from('cash_register_closings')
+          .select('id, is_finalized, notes, closing_date')
+          .eq('professional_id', appointment.professional_id)
+          .eq('closing_date', appointment.appointment_date)
+          .maybeSingle();
+        closing = data ?? null;
+      }
+
+      if (!closing) {
+        showToast('warning', 'Caixa não encontrado', 'Nenhum fechamento de caixa vinculado a este agendamento.');
+        return;
+      }
+
+      if (!closing.is_finalized) {
+        const dateLabel = closing.closing_date
+          ? new Date(closing.closing_date + 'T12:00:00').toLocaleDateString('pt-BR')
+          : '';
+        showToast(
+          'info',
+          'Caixa ainda não finalizado',
+          `O fechamento${dateLabel ? ` do dia ${dateLabel}` : ''} ainda está em aberto. Finalize-o primeiro na tela de Caixa para poder reabri-lo.`
+        );
+        return;
+      }
+
+      setReopeningClosing(closing);
+      setShowReopenSheet(true);
+    } catch (err) {
+      const appErr = parseSupabaseError(err);
+      showToast('error', appErr.title, appErr.description);
+    } finally {
+      setLoadingReopen(false);
     }
   }
 
   async function doReopen(reason: string) {
-    if (!relatedClosing) return;
+    if (!reopeningClosing) return;
     setReopening(true);
     try {
       const notesEntry = `Reaberto em ${new Date().toLocaleString('pt-BR')}: ${reason}`;
-      const newNotes = relatedClosing.notes
-        ? `${relatedClosing.notes}\n${notesEntry}`
+      const newNotes = reopeningClosing.notes
+        ? `${reopeningClosing.notes}\n${notesEntry}`
         : notesEntry;
 
       const { data: updated, error } = await supabase
         .from('cash_register_closings')
         .update({ is_finalized: false, finalized_at: null, notes: newNotes })
-        .eq('id', relatedClosing.id)
+        .eq('id', reopeningClosing.id)
         .select('id');
 
       if (error) throw error;
@@ -887,7 +928,7 @@ function AppointmentDetailsContent({
       }
 
       setShowReopenSheet(false);
-      setRelatedClosing((prev) => prev ? { ...prev, is_finalized: false } : null);
+      setReopeningClosing(null);
       showToast('success', 'Caixa reaberto', 'O fechamento está disponível para edição.');
     } catch (err) {
       const appErr = parseSupabaseError(err);
@@ -1109,12 +1150,16 @@ function AppointmentDetailsContent({
                 )}
               </div>
 
-              {appointment.status === 'completed' && relatedClosing?.is_finalized && (
+              {appointment.status === 'completed' && (
                 <button
-                  onClick={() => setShowReopenSheet(true)}
-                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors"
+                  onClick={handleReopenClick}
+                  disabled={loadingReopen}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  {loadingReopen
+                    ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : <RotateCcw className="w-4 h-4" />
+                  }
                   Reabrir Caixa
                 </button>
               )}
