@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast';
 import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
 import { formatWhatsAppUrl } from '../lib/whatsapp';
 import ReopenCashRegisterSheet from '../components/ReopenCashRegisterSheet';
-import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle, RotateCcw } from 'lucide-react';
+import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle, RotateCcw, CheckCircle2, Star, DollarSign, AlertTriangle } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -23,6 +23,8 @@ interface Appointment {
   downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
   downpayment_notes?: string | null;
   has_payment?: boolean;
+  payment_status?: 'none' | 'partial' | 'paid' | 'reopened' | 'reversed' | 'credited' | 'legacy';
+  payment_paid_at?: string | null;
   patient?: { full_name: string; phone?: string };
   procedure?: { name: string; duration_minutes: number; default_price?: number };
   professional?: { full_name: string };
@@ -41,6 +43,17 @@ interface Professional {
 }
 
 type ViewMode = 'day' | 'week' | 'month';
+
+function getPaymentStatusConfig(ps?: string) {
+  switch (ps) {
+    case 'paid':     return { Icon: CheckCircle2, label: 'Pago',      color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
+    case 'partial':  return { Icon: DollarSign,   label: 'Sinal',     color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200' };
+    case 'reopened': return { Icon: RotateCcw,    label: 'Correção',  color: 'text-orange-500', bg: 'bg-orange-50 border-orange-200' };
+    case 'reversed': return { Icon: AlertTriangle,label: 'Estornado', color: 'text-red-600',    bg: 'bg-red-50 border-red-200' };
+    case 'credited': return { Icon: Star,         label: 'Crédito',   color: 'text-blue-600',   bg: 'bg-blue-50 border-blue-200' };
+    default:         return null;
+  }
+}
 
 export default function Agenda() {
   const { user, isSuperAdmin } = useAuth();
@@ -486,10 +499,18 @@ function MonthView({ currentDate, appointments, onDayClick }: MonthViewProps) {
   const todayStr = new Date().toISOString().split('T')[0];
 
   // Group appointments by date
-  const countsByDate: Record<string, number> = {};
+  const aptsByDate: Record<string, Appointment[]> = {};
   for (const apt of appointments) {
-    countsByDate[apt.appointment_date] = (countsByDate[apt.appointment_date] || 0) + 1;
+    if (!aptsByDate[apt.appointment_date]) aptsByDate[apt.appointment_date] = [];
+    aptsByDate[apt.appointment_date].push(apt);
   }
+
+  const statusDotColor = (s: string) => ({
+    scheduled: '#8b7fa3',
+    confirmed: '#c8a97e',
+    completed: '#16a34a',
+    cancelled: '#9ca3af',
+  } as Record<string, string>)[s] ?? '#9ca3af';
 
   // Build grid cells
   const cells: (Date | null)[] = [];
@@ -518,35 +539,53 @@ function MonthView({ currentDate, appointments, onDayClick }: MonthViewProps) {
       <div className="grid grid-cols-7 gap-1">
         {cells.map((date, idx) => {
           if (!date) {
-            return <div key={`empty-${idx}`} className="aspect-square" />;
+            return <div key={`empty-${idx}`} className="min-h-[72px]" />;
           }
           const dateStr = date.toISOString().split('T')[0];
-          const count = countsByDate[dateStr] || 0;
+          const dayApts = aptsByDate[dateStr] || [];
           const isToday = dateStr === todayStr;
+          const visible = dayApts.slice(0, 3);
+          const overflow = dayApts.length - 3;
 
           return (
             <button
               key={dateStr}
               onClick={() => onDayClick(date)}
-              className={`aspect-square rounded-lg flex flex-col items-center justify-center gap-0.5 text-sm transition-colors hover:bg-champagne-nuvem border ${
+              className={`min-h-[72px] rounded-lg flex flex-col items-start p-1 gap-0.5 text-sm transition-colors hover:bg-champagne-nuvem border ${
                 isToday
                   ? 'border-primary bg-primary/5 font-bold'
                   : 'border-transparent'
               }`}
             >
-              <span className={isToday ? 'text-primary' : 'text-text'}>{date.getDate()}</span>
-              {count > 0 && (
-                <span
-                  className={`text-[10px] font-semibold px-1.5 rounded-full ${
-                    count >= 5
-                      ? 'bg-red-100 text-red-700'
-                      : count >= 3
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-green-100 text-green-700'
-                  }`}
-                >
-                  {count}
-                </span>
+              <span className={`text-xs w-full text-center mb-0.5 ${isToday ? 'text-primary' : 'text-text'}`}>
+                {date.getDate()}
+              </span>
+              {visible.map((apt) => {
+                const pc = (() => {
+                  switch (apt.payment_status) {
+                    case 'paid':     return { Icon: CheckCircle2, color: 'text-green-600' };
+                    case 'partial':  return { Icon: DollarSign,   color: 'text-amber-600' };
+                    case 'reopened': return { Icon: RotateCcw,    color: 'text-orange-500' };
+                    case 'reversed': return { Icon: AlertTriangle,color: 'text-red-600' };
+                    case 'credited': return { Icon: Star,         color: 'text-blue-600' };
+                    default:         return null;
+                  }
+                })();
+                return (
+                  <div
+                    key={apt.id}
+                    className="w-full flex items-center gap-1 rounded text-[10px] px-1 py-0.5 bg-white overflow-hidden"
+                    style={{ borderLeft: `3px solid ${statusDotColor(apt.status)}` }}
+                  >
+                    <span className="truncate flex-1 min-w-0">
+                      {apt.patient?.full_name?.split(' ')[0] ?? '—'}
+                    </span>
+                    {pc && <pc.Icon className={`w-2.5 h-2.5 flex-shrink-0 ${pc.color}`} />}
+                  </div>
+                );
+              })}
+              {overflow > 0 && (
+                <span className="text-[9px] text-text-muted pl-1">+{overflow}</span>
               )}
             </button>
           );
@@ -709,8 +748,15 @@ function WeekView({ weekDays, groupedAppointments, getStatusColor, getStatusLabe
                       <div className="text-text-muted truncate">
                         {apt.patient?.full_name}
                       </div>
-                      <div className={`inline-block px-2 py-0.5 rounded-full text-xs mt-1 border ${getStatusColor(apt.status)}`}>
-                        {getStatusLabel(apt.status)}
+                      <div className="flex items-center gap-1 mt-1 flex-wrap">
+                        <div className={`inline-block px-2 py-0.5 rounded-full text-xs border ${getStatusColor(apt.status)}`}>
+                          {getStatusLabel(apt.status)}
+                        </div>
+                        {(() => {
+                          const pc = getPaymentStatusConfig(apt.payment_status);
+                          if (!pc) return null;
+                          return <pc.Icon className={`w-3 h-3 mt-0.5 ${pc.color}`} />;
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -776,6 +822,16 @@ function AppointmentCard({ appointment, getStatusColor, getStatusLabel, onRefres
               <span className={`px-3 py-1.5 rounded-full text-xs font-semibold border whitespace-nowrap ${getStatusColor(appointment.status)}`}>
                 {getStatusLabel(appointment.status)}
               </span>
+              {(() => {
+                const pc = getPaymentStatusConfig(appointment.payment_status);
+                if (!pc) return null;
+                return (
+                  <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${pc.bg} ${pc.color}`}>
+                    <pc.Icon className="w-3 h-3" />
+                    {pc.label}
+                  </span>
+                );
+              })()}
               {isNext && (
                 <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-primary text-white whitespace-nowrap">
                   PRÓXIMO
@@ -840,113 +896,71 @@ function AppointmentDetailsContent({
   const [cancellationReason, setCancellationReason] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
-  const [showReopenSheet, setShowReopenSheet] = useState(false);
-  const [reopening, setReopening] = useState(false);
-  const [loadingReopen, setLoadingReopen] = useState(false);
-  const [reopeningClosing, setReopeningClosing] = useState<{ id: string; notes: string | null } | null>(null);
+  const [showReopenPaymentSheet, setShowReopenPaymentSheet] = useState(false);
+  const [reopeningPayment, setReopeningPayment] = useState(false);
 
-  async function handleReopenClick() {
-    setLoadingReopen(true);
+  async function doReopenPayment(_reason: string) {
+    setReopeningPayment(true);
     try {
-      // Tenta encontrar o fechamento via transação vinculada ao agendamento
-      // Usa limit(1) pois pode haver múltiplas transações (pagamento dividido em formas)
-      const { data: txRows } = await supabase
+      // 1. Buscar transações type='payment' do agendamento
+      const { data: txs, error: txErr } = await supabase
         .from('cash_register_transactions')
-        .select('closing_id')
+        .select('id, closing_id, amount')
         .eq('appointment_id', appointment.id)
-        .limit(1);
-      const txRow = txRows?.[0] ?? null;
+        .eq('type', 'payment');
+      if (txErr) throw txErr;
+      if (!txs?.length) throw new Error('Nenhuma transação de pagamento encontrada.');
 
-      let closing: { id: string; is_finalized: boolean; notes: string | null; closing_date?: string } | null = null;
+      const closingId = txs[0].closing_id;
+      const txIds = txs.map((t: { id: string }) => t.id);
 
-      if (txRow?.closing_id) {
-        const { data } = await supabase
-          .from('cash_register_closings')
-          .select('id, is_finalized, notes, closing_date')
-          .eq('id', txRow.closing_id)
-          .maybeSingle();
-        closing = data ?? null;
-      }
+      // 2. Deletar transações
+      const { error: delErr } = await supabase
+        .from('cash_register_transactions')
+        .delete()
+        .in('id', txIds);
+      if (delErr) throw delErr;
 
-      // Fallback: busca por professional_id + data do agendamento
-      if (!closing) {
-        const { data } = await supabase
-          .from('cash_register_closings')
-          .select('id, is_finalized, notes, closing_date')
-          .eq('professional_id', appointment.professional_id)
-          .eq('closing_date', appointment.appointment_date)
-          .maybeSingle();
-        closing = data ?? null;
-      }
-
-      if (!closing) {
-        showToast('warning', 'Caixa não encontrado', 'Nenhum fechamento de caixa vinculado a este agendamento.');
-        return;
-      }
-
-      if (!closing.is_finalized) {
-        const dateLabel = closing.closing_date
-          ? new Date(closing.closing_date + 'T12:00:00').toLocaleDateString('pt-BR')
-          : '';
-        showToast(
-          'info',
-          'Caixa ainda não finalizado',
-          `O fechamento${dateLabel ? ` do dia ${dateLabel}` : ''} ainda está em aberto. Finalize-o primeiro na tela de Caixa para poder reabri-lo.`
-        );
-        return;
-      }
-
-      setReopeningClosing(closing);
-      setShowReopenSheet(true);
-    } catch (err) {
-      const appErr = parseSupabaseError(err);
-      showToast('error', appErr.title, appErr.description);
-    } finally {
-      setLoadingReopen(false);
-    }
-  }
-
-  async function doReopen(reason: string) {
-    if (!reopeningClosing) return;
-    setReopening(true);
-    try {
-      const notesEntry = `Reaberto em ${new Date().toLocaleString('pt-BR')}: ${reason}`;
-      const newNotes = reopeningClosing.notes
-        ? `${reopeningClosing.notes}\n${notesEntry}`
-        : notesEntry;
-
-      const { data: updated, error } = await supabase
+      // 3. Recalcular total do closing
+      const { data: rem } = await supabase
+        .from('cash_register_transactions')
+        .select('amount, type')
+        .eq('closing_id', closingId);
+      const newTotal = (rem || []).reduce(
+        (s: number, t: { amount: number; type: string }) =>
+          t.type === 'reversal' ? s - t.amount : s + t.amount,
+        0
+      );
+      await supabase
         .from('cash_register_closings')
-        .update({ is_finalized: false, finalized_at: null, notes: newNotes })
-        .eq('id', reopeningClosing.id)
-        .select('id');
+        .update({ total_amount: Math.max(0, newTotal) })
+        .eq('id', closingId);
 
-      if (error) throw error;
+      // 4. Atualizar payment_status
+      const { error: aptErr } = await supabase
+        .from('appointments')
+        .update({ payment_status: 'reopened' })
+        .eq('id', appointment.id);
+      if (aptErr) throw aptErr;
 
-      if (!updated || updated.length === 0) {
-        throw new Error('Permissão negada. Verifique se você tem acesso para reabrir este fechamento.');
-      }
-
-      setShowReopenSheet(false);
-      setReopeningClosing(null);
-      showToast('success', 'Caixa reaberto', 'O fechamento está disponível para edição.');
+      setShowReopenPaymentSheet(false);
+      onRefresh();
+      showToast(
+        'success',
+        'Pagamento reaberto',
+        'O valor foi removido do caixa. Registre o pagamento correto ao concluir o atendimento.'
+      );
     } catch (err) {
-      const appErr = parseSupabaseError(err);
-      showToast('error', appErr.title, appErr.description);
+      const { title, description } = parseSupabaseError(err);
+      showToast('error', title, description);
     } finally {
-      setReopening(false);
+      setReopeningPayment(false);
     }
   }
 
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
     if (newStatus === 'cancelled' && !showCancelReason) {
       setShowCancelReason(true);
-      return;
-    }
-
-    // Se for concluir, abrir modal de pagamento ao invés de atualizar diretamente
-    if (newStatus === 'completed') {
-      setShowPaymentModal(true);
       return;
     }
 
@@ -1004,6 +1018,33 @@ function AppointmentDetailsContent({
               </span>
             </div>
           </div>
+
+          {appointment.payment_status && appointment.payment_status !== 'none'
+            && appointment.payment_status !== 'legacy' && (() => {
+            const pc = (() => {
+              switch (appointment.payment_status) {
+                case 'paid':     return { Icon: CheckCircle2, label: 'Pago',      color: 'text-green-600',  bg: 'bg-green-50 border-green-200' };
+                case 'partial':  return { Icon: DollarSign,   label: 'Sinal',     color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200' };
+                case 'reopened': return { Icon: RotateCcw,    label: 'Correção',  color: 'text-orange-500', bg: 'bg-orange-50 border-orange-200' };
+                case 'reversed': return { Icon: AlertTriangle,label: 'Estornado', color: 'text-red-600',    bg: 'bg-red-50 border-red-200' };
+                case 'credited': return { Icon: Star,         label: 'Crédito',   color: 'text-blue-600',   bg: 'bg-blue-50 border-blue-200' };
+                default:         return null;
+              }
+            })();
+            if (!pc) return null;
+            return (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${pc.bg} ${pc.color}`}>
+                <pc.Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="font-medium">{pc.label}</span>
+              </div>
+            );
+          })()}
+          {appointment.status === 'completed' && (!appointment.payment_status || appointment.payment_status === 'none') && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-amber-50 border-amber-200 text-amber-700 text-sm">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Pagamento não registrado</span>
+            </div>
+          )}
 
           <div>
             <label className="text-sm text-text-muted">Paciente</label>
@@ -1112,16 +1153,14 @@ function AppointmentDetailsContent({
             <div className="pt-4 border-t border-accent/10">
               <label className="text-sm font-medium text-text mb-3 block">Ações</label>
               <div className="grid grid-cols-2 gap-3">
-                {(appointment.status === 'scheduled' || appointment.status === 'confirmed') && (
-                  <button
-                    onClick={() => setShowEditForm(true)}
-                    className="btn-touch bg-accent hover:bg-accent/80 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                  >
-                    <CalendarClock className="w-4 h-4" />
-                    Remarcar
-                  </button>
-                )}
-                {appointment.status !== 'confirmed' && appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                <button
+                  onClick={() => setShowEditForm(true)}
+                  className="btn-touch bg-accent hover:bg-accent/80 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  <CalendarClock className="w-4 h-4" />
+                  Remarcar
+                </button>
+                {appointment.status !== 'confirmed' && (
                   <button
                     onClick={() => updateStatus('confirmed')}
                     disabled={updating}
@@ -1130,7 +1169,7 @@ function AppointmentDetailsContent({
                     Confirmar
                   </button>
                 )}
-                {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
+                {appointment.status !== 'completed' && (
                   <button
                     onClick={() => updateStatus('completed')}
                     disabled={updating}
@@ -1139,7 +1178,7 @@ function AppointmentDetailsContent({
                     Concluir
                   </button>
                 )}
-                {appointment.status !== 'cancelled' && appointment.status !== 'completed' && (
+                {appointment.status !== 'cancelled' && (
                   <button
                     onClick={() => updateStatus('cancelled')}
                     disabled={updating}
@@ -1150,17 +1189,23 @@ function AppointmentDetailsContent({
                 )}
               </div>
 
-              {appointment.status === 'completed' && (
+              {appointment.status === 'completed' &&
+                (!appointment.payment_status || appointment.payment_status === 'none' || appointment.payment_status === 'reopened') && (
                 <button
-                  onClick={handleReopenClick}
-                  disabled={loadingReopen}
-                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors disabled:opacity-50"
+                  onClick={() => setShowPaymentModal(true)}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
                 >
-                  {loadingReopen
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <RotateCcw className="w-4 h-4" />
-                  }
-                  Reabrir Caixa
+                  <DollarSign className="w-4 h-4" />
+                  Registrar Pagamento
+                </button>
+              )}
+              {(appointment.payment_status === 'paid' || appointment.payment_status === 'partial') && (
+                <button
+                  onClick={() => setShowReopenPaymentSheet(true)}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 border border-orange-200 rounded-lg transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reabrir Pagamento
                 </button>
               )}
             </div>
@@ -1183,10 +1228,11 @@ function AppointmentDetailsContent({
         )}
 
         <ReopenCashRegisterSheet
-          isOpen={showReopenSheet}
-          onConfirm={doReopen}
-          onCancel={() => setShowReopenSheet(false)}
-          isLoading={reopening}
+          isOpen={showReopenPaymentSheet}
+          title="Reabrir Pagamento"
+          onConfirm={doReopenPayment}
+          onCancel={() => setShowReopenPaymentSheet(false)}
+          isLoading={reopeningPayment}
         />
     </div>
   );

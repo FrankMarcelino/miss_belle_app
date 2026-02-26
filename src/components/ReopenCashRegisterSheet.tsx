@@ -7,6 +7,7 @@ interface ReopenCashRegisterSheetProps {
   onConfirm: (reason: string) => void;
   onCancel: () => void;
   isLoading: boolean;
+  title?: string;
 }
 
 export default function ReopenCashRegisterSheet({
@@ -14,6 +15,7 @@ export default function ReopenCashRegisterSheet({
   onConfirm,
   onCancel,
   isLoading,
+  title = 'Reabrir Fechamento',
 }: ReopenCashRegisterSheetProps) {
   const [reason, setReason] = useState('');
   const isMobile = window.innerWidth < 768;
@@ -23,7 +25,7 @@ export default function ReopenCashRegisterSheet({
     <div className="space-y-5">
       <div className="flex flex-col items-center text-center gap-3 pt-2">
         <RotateCcw className="w-12 h-12 text-orange-500" />
-        <h3 className="text-lg font-semibold text-text">Reabrir Fechamento</h3>
+        <h3 className="text-lg font-semibold text-text">{title}</h3>
       </div>
 
       <p className="text-sm text-text-muted text-center">
@@ -74,7 +76,7 @@ export default function ReopenCashRegisterSheet({
 
   if (isMobile) {
     return (
-      <BottomSheet isOpen={isOpen} title="Reabrir Caixa" onClose={onCancel}>
+      <BottomSheet isOpen={isOpen} title={title} onClose={onCancel}>
         {content}
       </BottomSheet>
     );
