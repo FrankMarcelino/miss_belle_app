@@ -852,19 +852,12 @@ function AppointmentDetailsContent({
 
   async function loadRelatedClosing() {
     try {
-      const { data: tx } = await supabase
-        .from('cash_register_transactions')
-        .select('closing_id')
-        .eq('appointment_id', appointment.id)
-        .limit(1)
-        .maybeSingle();
-
-      if (!tx?.closing_id) return;
-
+      // Busca direta por professional_id + data — não depende de RLS de cash_register_transactions
       const { data: closing } = await supabase
         .from('cash_register_closings')
         .select('id, is_finalized, notes')
-        .eq('id', tx.closing_id)
+        .eq('professional_id', appointment.professional_id)
+        .eq('closing_date', appointment.appointment_date)
         .maybeSingle();
 
       if (closing) setRelatedClosing(closing);
