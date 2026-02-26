@@ -482,7 +482,7 @@ export default function Dashboard() {
         .select('status, payment_status, appointment_date, procedure:procedures(default_price)')
         .gte('appointment_date', start)
         .lte('appointment_date', end)
-        .neq('payment_status', 'legacy');
+        .or('payment_status.is.null,payment_status.neq.legacy');
 
       if (!isSuperAdmin && user) {
         query = query.eq('professional_id', user.id);
@@ -765,17 +765,17 @@ export default function Dashboard() {
             </h3>
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between">
-                <span className="text-text-muted">Pagas</span>
-                <span className="font-medium text-text">R$ {expenseStats.paidExpenses.toFixed(2)}</span>
+                <span className="text-text-muted">Devidas</span>
+                <span className="font-medium text-text">R$ {expenseStats.totalExpenses.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-text-muted">Previstas</span>
-                <span className="font-medium text-text">R$ {expenseStats.pendingExpenses.toFixed(2)}</span>
+                <span className="text-text-muted">Pagas</span>
+                <span className="font-medium text-green-600">R$ {expenseStats.paidExpenses.toFixed(2)}</span>
               </div>
               <div className="pt-1.5 border-t border-accent/10 flex justify-between">
-                <span className="font-medium text-text">Resultado</span>
-                <span className={`font-bold ${financialStats.consolidated - expenseStats.totalExpenses >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  R$ {(financialStats.consolidated - expenseStats.totalExpenses).toFixed(2)}
+                <span className="font-medium text-text">Restante</span>
+                <span className={`font-bold ${expenseStats.pendingExpenses > 0 ? 'text-orange-500' : 'text-text-muted'}`}>
+                  R$ {expenseStats.pendingExpenses.toFixed(2)}
                 </span>
               </div>
             </div>
