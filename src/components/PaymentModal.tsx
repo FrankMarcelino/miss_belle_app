@@ -40,6 +40,7 @@ export default function PaymentModal({
   ]);
   const [loading, setLoading] = useState(false);
   const [closingId, setClosingId] = useState<string | null>(null);
+  const [professionalId, setProfessionalId] = useState<string | null>(null);
 
   const remainingAmount = calculateRemainingAmount(totalAmount, downpaymentAmount);
 
@@ -56,6 +57,7 @@ export default function PaymentModal({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      setProfessionalId(user.id);
 
       const today = new Date().toISOString().split('T')[0];
 
@@ -176,12 +178,16 @@ export default function PaymentModal({
     setLoading(true);
 
     try {
+      const now = new Date().toISOString();
+
       // 1. Criar transações para cada forma de pagamento
       const transactions = paymentSplits.map((split) => ({
         closing_id: closingId,
         appointment_id: appointmentId,
+        professional_id: professionalId,
         amount: split.amount,
         payment_method: getPaymentMethodLabel(split.method),
+        type: 'payment',
         transaction_type: downpaymentAmount > 0 ? 'remaining_payment' : 'full_payment',
         notes: `Pagamento - ${procedureName} (${patientName})`,
       }));
@@ -192,10 +198,15 @@ export default function PaymentModal({
 
       if (transactionError) throw transactionError;
 
-      // 2. Atualizar status do agendamento para completed
+      // 2. Atualizar status do agendamento para completed + payment_status paid
       const { error: appointmentError } = await supabase
         .from('appointments')
-        .update({ status: 'completed', has_payment: true })
+        .update({
+          status: 'completed',
+          has_payment: true,
+          payment_status: 'paid',
+          payment_paid_at: now,
+        })
         .eq('id', appointmentId);
 
       if (appointmentError) throw appointmentError;
