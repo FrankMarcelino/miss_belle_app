@@ -7,7 +7,8 @@ import PaymentModal from '../components/PaymentModal';
 import { useToast } from '../components/Toast';
 import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
 import { formatWhatsAppUrl } from '../lib/whatsapp';
-import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle } from 'lucide-react';
+import ReopenCashRegisterSheet from '../components/ReopenCashRegisterSheet';
+import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle, RotateCcw } from 'lucide-react';
 
 interface Appointment {
   id: string;
@@ -839,6 +840,69 @@ function AppointmentDetailsContent({
   const [cancellationReason, setCancellationReason] = useState('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [relatedClosing, setRelatedClosing] = useState<{ id: string; is_finalized: boolean; notes: string | null } | null>(null);
+  const [showReopenSheet, setShowReopenSheet] = useState(false);
+  const [reopening, setReopening] = useState(false);
+
+  useEffect(() => {
+    if (appointment.status === 'completed') {
+      loadRelatedClosing();
+    }
+  }, [appointment.id, appointment.status]);
+
+  async function loadRelatedClosing() {
+    try {
+      const { data: tx } = await supabase
+        .from('cash_register_transactions')
+        .select('closing_id')
+        .eq('appointment_id', appointment.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!tx?.closing_id) return;
+
+      const { data: closing } = await supabase
+        .from('cash_register_closings')
+        .select('id, is_finalized, notes')
+        .eq('id', tx.closing_id)
+        .maybeSingle();
+
+      if (closing) setRelatedClosing(closing);
+    } catch {
+    }
+  }
+
+  async function doReopen(reason: string) {
+    if (!relatedClosing) return;
+    setReopening(true);
+    try {
+      const notesEntry = `Reaberto em ${new Date().toLocaleString('pt-BR')}: ${reason}`;
+      const newNotes = relatedClosing.notes
+        ? `${relatedClosing.notes}\n${notesEntry}`
+        : notesEntry;
+
+      const { data: updated, error } = await supabase
+        .from('cash_register_closings')
+        .update({ is_finalized: false, finalized_at: null, notes: newNotes })
+        .eq('id', relatedClosing.id)
+        .select('id');
+
+      if (error) throw error;
+
+      if (!updated || updated.length === 0) {
+        throw new Error('Permissão negada. Verifique se você tem acesso para reabrir este fechamento.');
+      }
+
+      setShowReopenSheet(false);
+      setRelatedClosing((prev) => prev ? { ...prev, is_finalized: false } : null);
+      showToast('success', 'Caixa reaberto', 'O fechamento está disponível para edição.');
+    } catch (err) {
+      const appErr = parseSupabaseError(err);
+      showToast('error', appErr.title, appErr.description);
+    } finally {
+      setReopening(false);
+    }
+  }
 
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
     if (newStatus === 'cancelled' && !showCancelReason) {
@@ -1051,6 +1115,16 @@ function AppointmentDetailsContent({
                   </button>
                 )}
               </div>
+
+              {appointment.status === 'completed' && relatedClosing?.is_finalized && (
+                <button
+                  onClick={() => setShowReopenSheet(true)}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reabrir Caixa
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1069,6 +1143,13 @@ function AppointmentDetailsContent({
             onSuccess={handlePaymentSuccess}
           />
         )}
+
+        <ReopenCashRegisterSheet
+          isOpen={showReopenSheet}
+          onConfirm={doReopen}
+          onCancel={() => setShowReopenSheet(false)}
+          isLoading={reopening}
+        />
     </div>
   );
 }
