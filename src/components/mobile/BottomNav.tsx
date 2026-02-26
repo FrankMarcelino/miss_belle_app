@@ -23,7 +23,7 @@ export default function BottomNav() {
     },
     {
       id: 'patients',
-      label: 'Pacientes',
+      label: 'Clientes',
       icon: Users,
       route: '/pacientes',
       roles: ['user', 'super_admin'],

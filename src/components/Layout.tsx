@@ -40,14 +40,14 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Agenda Geral', icon: Calendar, path: '/agenda-geral' },
         { label: 'Usuários', icon: Users, path: '/usuarios', superAdminOnly: true },
         { label: 'Procedimentos', icon: Scissors, path: '/procedimentos' },
-        { label: 'Pacientes', icon: UserCircle, path: '/pacientes' },
+        { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Fechamentos', icon: DollarSign, path: '/fechamentos', superAdminOnly: true },
         { label: 'Despesas', icon: Receipt, path: '/despesas' },
       ]
     : [
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Minha Agenda', icon: Calendar, path: '/minha-agenda' },
-        { label: 'Pacientes', icon: UserCircle, path: '/pacientes' },
+        { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
         { label: 'Fechar Caixa', icon: DollarSign, path: '/fechar-caixa' },
         { label: 'Despesas', icon: Receipt, path: '/despesas' },
