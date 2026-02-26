@@ -481,41 +481,52 @@ export default function Dashboard() {
         .from('appointments')
         .select('status, payment_status, appointment_date, procedure:procedures(default_price)')
         .gte('appointment_date', start)
-        .lte('appointment_date', end)
-        .or('payment_status.is.null,payment_status.neq.legacy');
+        .lte('appointment_date', end);
 
       if (!isSuperAdmin && user) {
         query = query.eq('professional_id', user.id);
       }
 
-      const { data: appts, error } = await query;
+      const { data: raw, error } = await query;
       if (error) throw error;
 
-      const price = (apt: { procedure: unknown }) =>
-        (apt.procedure as { default_price?: number } | null)?.default_price ?? 0;
+      // Filtrar legacy no JS (SQL != não casa com NULL, ocultaria novos agendamentos)
+      const appts = (raw || []).filter((a) => a.payment_status !== 'legacy');
 
-      const consolidated = (appts || [])
+      // Supabase pode retornar o join como objeto ou array — tratar os dois casos
+      const price = (apt: { procedure: unknown }) => {
+        const proc = apt.procedure;
+        if (!proc) return 0;
+        if (Array.isArray(proc)) return (proc[0] as { default_price?: number })?.default_price ?? 0;
+        return (proc as { default_price?: number }).default_price ?? 0;
+      };
+
+      // Consolidada: pago + data <= hoje
+      const consolidated = appts
         .filter((a) => ['paid', 'partial'].includes(a.payment_status ?? '') && a.appointment_date <= today)
         .reduce((s, a) => s + price(a), 0);
 
-      const suspended = (appts || [])
+      // Suspensa: pago + data futura
+      const suspended = appts
         .filter((a) => a.payment_status === 'paid' && a.appointment_date > today)
         .reduce((s, a) => s + price(a), 0);
 
-      const projected = (appts || [])
+      // Projetada: agendado/confirmado sem pagamento (independente da data no período)
+      const projected = appts
         .filter(
           (a) =>
-            !['paid', 'reversed', 'credited'].includes(a.payment_status ?? '') &&
-            a.appointment_date > today &&
-            a.status !== 'cancelled'
+            !['paid', 'partial', 'reversed', 'credited'].includes(a.payment_status ?? '') &&
+            ['scheduled', 'confirmed'].includes(a.status)
         )
         .reduce((s, a) => s + price(a), 0);
 
-      const reversals = (appts || [])
+      // Estornos no período
+      const reversals = appts
         .filter((a) => a.payment_status === 'reversed')
         .reduce((s, a) => s + price(a), 0);
 
-      const delinquentAppts = (appts || []).filter(
+      // Inadimplência: concluído sem pagamento
+      const delinquentAppts = appts.filter(
         (a) => a.status === 'completed' && (!a.payment_status || a.payment_status === 'none')
       );
       const delinquency = delinquentAppts.reduce((s, a) => s + price(a), 0);
