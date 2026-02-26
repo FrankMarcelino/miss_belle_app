@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Loader2, Search, Mail, FileText, MessageCircle, History, Star, CheckCircle2, DollarSign, RotateCcw, AlertTriangle, Calendar, Clock, ChevronRight } from 'lucide-react';
+import { Plus, Edit2, Loader2, Search, Mail, FileText, MessageCircle, History, Star, CheckCircle2, DollarSign, RotateCcw, AlertTriangle, Calendar, Clock, ChevronRight } from 'lucide-react';
 import { formatWhatsAppUrl } from '../lib/whatsapp';
 import BottomSheet from '../components/mobile/BottomSheet';
 import { parseSupabaseError } from '../lib/errorHandling';
@@ -46,6 +46,7 @@ export default function Patients() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     loadPatients();
@@ -163,7 +164,7 @@ export default function Patients() {
       </div>
 
       {showCreateModal && (
-        <CreatePatientModal
+        <PatientFormModal
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
             setShowCreateModal(false);
@@ -182,8 +183,21 @@ export default function Patients() {
             patient={selectedPatient}
             currentUserId={user?.id || ''}
             showToast={showToast}
+            onEdit={() => setShowEditModal(true)}
           />
         </BottomSheet>
+      )}
+
+      {showEditModal && selectedPatient && (
+        <PatientFormModal
+          patient={selectedPatient}
+          onClose={() => setShowEditModal(false)}
+          onSuccess={(updated) => {
+            setShowEditModal(false);
+            setSelectedPatient(updated);
+            setPatients((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          }}
+        />
       )}
 
       {ToastComponent}
@@ -220,9 +234,10 @@ interface PatientDetailContentProps {
   patient: Patient;
   currentUserId: string;
   showToast: (type: 'success' | 'error' | 'warning' | 'info', message: string, description?: string) => void;
+  onEdit: () => void;
 }
 
-function PatientDetailContent({ patient, currentUserId, showToast }: PatientDetailContentProps) {
+function PatientDetailContent({ patient, currentUserId, showToast, onEdit }: PatientDetailContentProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'credits'>('history');
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [credits, setCredits] = useState<PatientCredit[]>([]);
@@ -282,6 +297,44 @@ function PatientDetailContent({ patient, currentUserId, showToast }: PatientDeta
 
   return (
     <div className="space-y-4">
+      {/* Dados + botão editar */}
+      <div className="bg-champagne-nuvem rounded-lg p-3 border border-accent/10 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-green-600" />
+              <a
+                href={formatWhatsAppUrl(patient.phone)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-green-600 font-medium"
+              >
+                {patient.phone}
+              </a>
+            </div>
+            {patient.email && (
+              <div className="flex items-center gap-2 text-text-muted">
+                <Mail className="w-4 h-4" />
+                <span className="text-sm">{patient.email}</span>
+              </div>
+            )}
+            {patient.notes && (
+              <div className="flex items-start gap-2 text-text-muted">
+                <FileText className="w-4 h-4 mt-0.5" />
+                <span className="text-sm">{patient.notes}</span>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={onEdit}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-primary border border-primary/30 hover:bg-primary/5 rounded-lg transition-colors flex-shrink-0 ml-3"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            Editar
+          </button>
+        </div>
+      </div>
+
       {/* Resumo */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
@@ -538,17 +591,19 @@ function AddManualCreditForm({ patientId, professionalId, onSuccess, onCancel, s
   );
 }
 
-interface CreatePatientModalProps {
+interface PatientFormModalProps {
+  patient?: Patient;   // undefined = criar novo; definido = editar
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (patient: Patient) => void;
 }
 
-function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
+function PatientFormModal({ patient, onClose, onSuccess }: PatientFormModalProps) {
   const { user } = useAuth();
-  const [fullName, setFullName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [notes, setNotes] = useState('');
+  const isEdit = !!patient;
+  const [fullName, setFullName] = useState(patient?.full_name ?? '');
+  const [phone, setPhone] = useState(patient?.phone ?? '');
+  const [email, setEmail] = useState(patient?.email ?? '');
+  const [notes, setNotes] = useState(patient?.notes ?? '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -558,37 +613,41 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
     setLoading(true);
 
     try {
-      const { error: insertError } = await supabase
-        .from('patients')
-        .insert({
-          full_name: fullName,
-          phone,
-          email: email || null,
-          notes: notes || null,
-          professional_id: user?.id,
-        });
-
-      if (insertError) throw insertError;
-
-      onSuccess();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao criar paciente';
-      setError(errorMessage);
+      if (isEdit) {
+        const { data, error: updateError } = await supabase
+          .from('patients')
+          .update({ full_name: fullName, phone, email: email || null, notes: notes || null })
+          .eq('id', patient.id)
+          .select()
+          .single();
+        if (updateError) throw updateError;
+        onSuccess(data as Patient);
+      } else {
+        const { data, error: insertError } = await supabase
+          .from('patients')
+          .insert({ full_name: fullName, phone, email: email || null, notes: notes || null, professional_id: user?.id })
+          .select()
+          .single();
+        if (insertError) throw insertError;
+        onSuccess(data as Patient);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar paciente');
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-[80]">
       <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
-        <h2 className="text-xl font-semibold text-text mb-6">Novo Paciente</h2>
+        <h2 className="text-xl font-semibold text-text mb-6">
+          {isEdit ? 'Editar Paciente' : 'Novo Paciente'}
+        </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Nome Completo
-            </label>
+            <label className="block text-sm font-medium text-text mb-2">Nome Completo</label>
             <input
               type="text"
               value={fullName}
@@ -600,9 +659,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Telefone
-            </label>
+            <label className="block text-sm font-medium text-text mb-2">Telefone</label>
             <input
               type="tel"
               value={phone}
@@ -615,9 +672,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              E-mail (opcional)
-            </label>
+            <label className="block text-sm font-medium text-text mb-2">E-mail (opcional)</label>
             <input
               type="email"
               value={email}
@@ -628,9 +683,7 @@ function CreatePatientModal({ onClose, onSuccess }: CreatePatientModalProps) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Observações (opcional)
-            </label>
+            <label className="block text-sm font-medium text-text mb-2">Observações (opcional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
