@@ -8,6 +8,7 @@ import { useToast } from '../components/Toast';
 import { parseSupabaseError, validateAppointmentData } from '../lib/errorHandling';
 import { formatWhatsAppUrl } from '../lib/whatsapp';
 import ReopenCashRegisterSheet from '../components/ReopenCashRegisterSheet';
+import ReversalModal from '../components/ReversalModal';
 import { Plus, Loader2, ChevronLeft, ChevronRight, ChevronDown, AlertCircle, Clock, Search, CalendarClock, MessageCircle, RotateCcw, CheckCircle2, Star, DollarSign, AlertTriangle } from 'lucide-react';
 
 interface Appointment {
@@ -898,6 +899,7 @@ function AppointmentDetailsContent({
   const [showEditForm, setShowEditForm] = useState(false);
   const [showReopenPaymentSheet, setShowReopenPaymentSheet] = useState(false);
   const [reopeningPayment, setReopeningPayment] = useState(false);
+  const [showReversalModal, setShowReversalModal] = useState(false);
 
   async function doReopenPayment(_reason: string) {
     setReopeningPayment(true);
@@ -1200,13 +1202,22 @@ function AppointmentDetailsContent({
                 </button>
               )}
               {(appointment.payment_status === 'paid' || appointment.payment_status === 'partial') && (
-                <button
-                  onClick={() => setShowReopenPaymentSheet(true)}
-                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 border border-orange-200 rounded-lg transition-colors"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Reabrir Pagamento
-                </button>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => setShowReversalModal(true)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    Estornar
+                  </button>
+                  <button
+                    onClick={() => setShowReopenPaymentSheet(true)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 border border-orange-200 rounded-lg transition-colors"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    Reabrir
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1233,6 +1244,20 @@ function AppointmentDetailsContent({
           onConfirm={doReopenPayment}
           onCancel={() => setShowReopenPaymentSheet(false)}
           isLoading={reopeningPayment}
+        />
+
+        <ReversalModal
+          isOpen={showReversalModal}
+          onClose={() => setShowReversalModal(false)}
+          appointmentId={appointment.id}
+          patientId={appointment.patient_id}
+          patientName={appointment.patient?.full_name || ''}
+          procedureName={appointment.procedure?.name || ''}
+          onSuccess={() => {
+            setShowReversalModal(false);
+            onRefresh();
+          }}
+          showToast={showToast}
         />
     </div>
   );
