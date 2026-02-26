@@ -1229,6 +1229,7 @@ function AppointmentDetailsContent({
             isOpen={showPaymentModal}
             onClose={() => setShowPaymentModal(false)}
             appointmentId={appointment.id}
+            patientId={appointment.patient_id}
             patientName={appointment.patient?.full_name || ''}
             procedureName={appointment.procedure?.name || ''}
             totalAmount={appointment.procedure?.default_price || 0}

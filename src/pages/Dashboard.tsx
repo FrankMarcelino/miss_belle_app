@@ -12,7 +12,11 @@ import {
   UserPlus,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
+  X,
+  MessageCircle,
 } from 'lucide-react';
+import { formatWhatsAppUrl } from '../lib/whatsapp';
 import {
   BarChart,
   Bar,
@@ -56,6 +60,15 @@ interface ExpenseStats {
   totalExpenses: number;
   paidExpenses: number;
   pendingExpenses: number;
+}
+
+interface DelinquentAppointment {
+  id: string;
+  appointment_date: string;
+  appointment_time: string;
+  patient: { full_name: string; phone: string };
+  procedure: { name: string; default_price: number };
+  professional?: { full_name: string };
 }
 
 interface FinancialStats {
@@ -117,6 +130,9 @@ export default function Dashboard() {
     delinquencyCount: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [showDelinquency, setShowDelinquency] = useState(false);
+  const [delinquentList, setDelinquentList] = useState<DelinquentAppointment[]>([]);
+  const [loadingDelinquency, setLoadingDelinquency] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -517,6 +533,38 @@ export default function Dashboard() {
     }
   }
 
+  async function loadDelinquentList() {
+    setLoadingDelinquency(true);
+    try {
+      const { start, end } = getDateRange();
+      let query = supabase
+        .from('appointments')
+        .select(`
+          id, appointment_date, appointment_time,
+          patient:patients(full_name, phone),
+          procedure:procedures(name, default_price),
+          professional:profiles!professional_id(full_name)
+        `)
+        .eq('status', 'completed')
+        .eq('payment_status', 'none')
+        .gte('appointment_date', start)
+        .lte('appointment_date', end)
+        .order('appointment_date', { ascending: false });
+
+      if (!isSuperAdmin && user) {
+        query = query.eq('professional_id', user.id);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setDelinquentList((data || []) as unknown as DelinquentAppointment[]);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingDelinquency(false);
+    }
+  }
+
   function handleModeChange(mode: Period) {
     setPeriodMode(mode);
     setPeriodOffset(0);
@@ -693,10 +741,14 @@ export default function Dashboard() {
         {/* Inadimplência + Despesas */}
         <div className="space-y-4">
           {financialStats.delinquencyCount > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <button
+              onClick={() => { setShowDelinquency(true); loadDelinquentList(); }}
+              className="w-full text-left bg-red-50 border border-red-200 rounded-xl p-4 hover:bg-red-100 transition-colors"
+            >
               <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
-                <DollarSign className="w-4 h-4" />
+                <AlertTriangle className="w-4 h-4" />
                 Inadimplência
+                <span className="ml-auto text-xs text-red-500">Ver lista →</span>
               </h3>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-red-600">
@@ -704,7 +756,7 @@ export default function Dashboard() {
                 </span>
                 <span className="font-bold text-red-700">R$ {financialStats.delinquency.toFixed(2)}</span>
               </div>
-            </div>
+            </button>
           )}
           <div className="bg-background-card rounded-xl p-4 border border-accent/10 shadow-card">
             <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
@@ -902,6 +954,92 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Delinquency modal */}
+      {showDelinquency && (
+        <div className="fixed inset-0 bg-grafite-rosado/50 flex items-end sm:items-center justify-center p-0 sm:p-4 z-50">
+          <div className="bg-background-card w-full sm:max-w-lg sm:rounded-2xl shadow-soft-lg border border-accent/10 flex flex-col max-h-[90vh] rounded-t-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-accent/10">
+              <h2 className="text-lg font-semibold text-text flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-500" />
+                Inadimplência — {getPeriodLabel()}
+              </h2>
+              <button
+                onClick={() => setShowDelinquency(false)}
+                className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-text-muted" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="overflow-y-auto flex-1 p-5">
+              {loadingDelinquency ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : delinquentList.length === 0 ? (
+                <p className="text-center text-text-muted py-8">Nenhum inadimplente no período.</p>
+              ) : (
+                <div className="space-y-3">
+                  {delinquentList.map((apt) => {
+                    const dateStr = new Date(apt.appointment_date + 'T12:00:00').toLocaleDateString('pt-BR');
+                    const price = apt.procedure?.default_price ?? 0;
+                    return (
+                      <div key={apt.id} className="bg-champagne-nuvem rounded-lg p-3 border border-accent/10">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-text text-sm truncate">{apt.patient?.full_name}</p>
+                              {apt.patient?.phone && (
+                                <a
+                                  href={formatWhatsAppUrl(
+                                    apt.patient.phone,
+                                    `Olá, ${apt.patient.full_name}! Passando para lembrar sobre o pagamento do procedimento ${apt.procedure?.name}.`
+                                  )}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex-shrink-0 p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                  title="Enviar lembrete via WhatsApp"
+                                >
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
+                            <p className="text-text-muted text-xs mt-0.5">{apt.procedure?.name}</p>
+                            <p className="text-text-muted text-xs">
+                              {dateStr} às {apt.appointment_time?.substring(0, 5)}
+                            </p>
+                            {isSuperAdmin && apt.professional && (
+                              <p className="text-text-muted text-xs">{apt.professional.full_name}</p>
+                            )}
+                          </div>
+                          <span className="text-sm font-bold text-red-600 flex-shrink-0">
+                            {price > 0 ? `R$ ${price.toFixed(2)}` : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!loadingDelinquency && delinquentList.length > 0 && (
+              <div className="p-5 border-t border-accent/10">
+                <div className="flex items-center justify-between text-sm font-semibold">
+                  <span className="text-text">
+                    {delinquentList.length} atendimento{delinquentList.length !== 1 ? 's' : ''} sem pagamento
+                  </span>
+                  <span className="text-red-600">R$ {financialStats.delinquency.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

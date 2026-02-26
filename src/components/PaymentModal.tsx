@@ -8,13 +8,20 @@ import {
 } from '../lib/paymentValidation';
 import { useToast } from './Toast';
 import { parseSupabaseError } from '../lib/errorHandling';
-import { X, Plus, Trash2, DollarSign, Check, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, DollarSign, Check, AlertCircle, Star } from 'lucide-react';
 import BottomSheet from './mobile/BottomSheet';
+
+interface AvailableCredit {
+  id: string;
+  amount_remaining: number;
+  expires_at: string | null;
+}
 
 interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   appointmentId: string;
+  patientId: string;
   patientName: string;
   procedureName: string;
   totalAmount: number;
@@ -27,6 +34,7 @@ export default function PaymentModal({
   isOpen,
   onClose,
   appointmentId,
+  patientId,
   patientName,
   procedureName,
   totalAmount,
@@ -41,23 +49,50 @@ export default function PaymentModal({
   const [loading, setLoading] = useState(false);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [professionalId, setProfessionalId] = useState<string | null>(null);
+  const [availableCredits, setAvailableCredits] = useState<AvailableCredit[]>([]);
+  const [totalCreditBalance, setTotalCreditBalance] = useState(0);
+  const [creditToUse, setCreditToUse] = useState(0);
 
   const remainingAmount = calculateRemainingAmount(totalAmount, downpaymentAmount);
+  const effectiveRemaining = Math.max(0, remainingAmount - creditToUse);
 
   // Carregar ou criar fechamento de caixa do dia
   useEffect(() => {
     if (isOpen) {
+      setCreditToUse(0);
+      setAvailableCredits([]);
+      setTotalCreditBalance(0);
       loadOrCreateClosing();
-      // Inicializar com valor restante no primeiro campo
       setPaymentSplits([{ method: 'dinheiro', amount: remainingAmount }]);
     }
   }, [isOpen, remainingAmount]);
+
+  // Ajustar splits quando crédito aplicado muda
+  useEffect(() => {
+    setPaymentSplits([{ method: 'dinheiro', amount: effectiveRemaining }]);
+  }, [creditToUse]);
+
+  async function loadCredits(userId: string) {
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('patient_credits')
+      .select('id, amount_remaining, expires_at')
+      .eq('patient_id', patientId)
+      .eq('professional_id', userId)
+      .gt('amount_remaining', 0)
+      .or(`expires_at.is.null,expires_at.gte.${today}`)
+      .order('expires_at', { ascending: true, nullsFirst: false });
+    const credits = data || [];
+    setAvailableCredits(credits);
+    setTotalCreditBalance(credits.reduce((s, c) => s + c.amount_remaining, 0));
+  }
 
   async function loadOrCreateClosing() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       setProfessionalId(user.id);
+      loadCredits(user.id);
 
       const today = new Date().toISOString().split('T')[0];
 
@@ -99,7 +134,7 @@ export default function PaymentModal({
 
   function addPaymentSplit() {
     const currentSum = paymentSplits.reduce((sum, s) => sum + s.amount, 0);
-    const rest = Math.max(0, Math.round((remainingAmount - currentSum) * 100) / 100);
+    const rest = Math.max(0, Math.round((effectiveRemaining - currentSum) * 100) / 100);
     setPaymentSplits([...paymentSplits, { method: 'dinheiro', amount: rest }]);
   }
 
@@ -116,7 +151,7 @@ export default function PaymentModal({
     if (updated.length > 0) {
       const lastIdx = updated.length - 1;
       const sumOthers = updated.reduce((sum, s, i) => i < lastIdx ? sum + s.amount : sum, 0);
-      updated[lastIdx].amount = Math.max(0, Math.round((remainingAmount - sumOthers) * 100) / 100);
+      updated[lastIdx].amount = Math.max(0, Math.round((effectiveRemaining - sumOthers) * 100) / 100);
     }
     setPaymentSplits(updated);
   }
@@ -133,12 +168,9 @@ export default function PaymentModal({
       updated[index].amount = Number(value) || 0;
       if (updated.length > 1) {
         const lastIdx = updated.length - 1;
-        // Determine which split to recalculate:
-        // - editing last → recalculate first
-        // - editing any other → recalculate last
         const targetIdx = index === lastIdx ? 0 : lastIdx;
         const sumOthers = updated.reduce((sum, s, i) => i !== targetIdx ? sum + s.amount : sum, 0);
-        updated[targetIdx].amount = Math.max(0, Math.round((remainingAmount - sumOthers) * 100) / 100);
+        updated[targetIdx].amount = Math.max(0, Math.round((effectiveRemaining - sumOthers) * 100) / 100);
       }
     }
     setPaymentSplits(updated);
@@ -149,82 +181,88 @@ export default function PaymentModal({
   }
 
   function isValidTotal(): boolean {
+    if (effectiveRemaining <= 0.001) return true; // tudo coberto por crédito
     const total = getTotalInformed();
-    const difference = Math.abs(total - remainingAmount);
-    return difference <= 0.01;
+    return Math.abs(total - effectiveRemaining) <= 0.01;
   }
 
   async function handleSubmit() {
-    if (!closingId) {
-      showToast({
-        type: 'error',
-        message: 'Erro',
-        description: 'Fechamento de caixa não encontrado.',
-      });
+    if (effectiveRemaining > 0.001 && !closingId) {
+      showToast({ type: 'error', message: 'Erro', description: 'Fechamento de caixa não encontrado.' });
       return;
     }
 
-    // Validar pagamentos
-    const validation = validatePaymentSplits(paymentSplits, remainingAmount);
-    if (!validation.isValid) {
-      showToast({
-        type: 'error',
-        message: 'Pagamento inválido',
-        description: validation.message,
-      });
-      return;
+    if (effectiveRemaining > 0.001) {
+      const validation = validatePaymentSplits(paymentSplits, effectiveRemaining);
+      if (!validation.isValid) {
+        showToast({ type: 'error', message: 'Pagamento inválido', description: validation.message });
+        return;
+      }
     }
 
     setLoading(true);
-
     try {
       const now = new Date().toISOString();
 
-      // 1. Criar transações para cada forma de pagamento
-      const transactions = paymentSplits.map((split) => ({
-        closing_id: closingId,
-        appointment_id: appointmentId,
-        professional_id: professionalId,
-        amount: split.amount,
-        payment_method: getPaymentMethodLabel(split.method),
-        type: 'payment',
-        transaction_type: downpaymentAmount > 0 ? 'remaining_payment' : 'full_payment',
-        notes: `Pagamento - ${procedureName} (${patientName})`,
-      }));
+      // 1. Aplicar crédito do paciente (se houver)
+      if (creditToUse > 0) {
+        let remaining = creditToUse;
+        for (const credit of availableCredits) {
+          if (remaining <= 0.001) break;
+          const use = Math.min(remaining, credit.amount_remaining);
+          const { error: useErr } = await supabase
+            .from('patient_credit_uses')
+            .insert({ credit_id: credit.id, appointment_id: appointmentId, amount_used: use, used_by: professionalId });
+          if (useErr) throw useErr;
+          const { error: updErr } = await supabase
+            .from('patient_credits')
+            .update({ amount_remaining: Math.max(0, credit.amount_remaining - use) })
+            .eq('id', credit.id);
+          if (updErr) throw updErr;
+          remaining -= use;
+        }
+      }
 
-      const { error: transactionError } = await supabase
-        .from('cash_register_transactions')
-        .insert(transactions);
+      // 2. Criar transações de caixa (apenas se houver valor em dinheiro)
+      if (effectiveRemaining > 0.001) {
+        const transactions = paymentSplits
+          .filter((s) => s.amount > 0)
+          .map((split) => ({
+            closing_id: closingId,
+            appointment_id: appointmentId,
+            professional_id: professionalId,
+            amount: split.amount,
+            payment_method: getPaymentMethodLabel(split.method),
+            type: 'payment',
+            transaction_type: downpaymentAmount > 0 ? 'remaining_payment' : 'full_payment',
+            notes: `Pagamento - ${procedureName} (${patientName})`,
+          }));
 
-      if (transactionError) throw transactionError;
+        const { error: transactionError } = await supabase
+          .from('cash_register_transactions')
+          .insert(transactions);
+        if (transactionError) throw transactionError;
+      }
 
-      // 2. Atualizar status do agendamento para completed + payment_status paid
+      // 3. Atualizar agendamento
       const { error: appointmentError } = await supabase
         .from('appointments')
-        .update({
-          status: 'completed',
-          has_payment: true,
-          payment_status: 'paid',
-          payment_paid_at: now,
-        })
+        .update({ status: 'completed', has_payment: true, payment_status: 'paid', payment_paid_at: now })
         .eq('id', appointmentId);
-
       if (appointmentError) throw appointmentError;
 
       showToast({
         type: 'success',
         message: 'Pagamento registrado!',
-        description: 'O atendimento foi finalizado e o pagamento foi registrado no caixa.',
+        description: creditToUse > 0
+          ? `R$ ${creditToUse.toFixed(2)} em crédito + R$ ${effectiveRemaining.toFixed(2)} em dinheiro.`
+          : 'O pagamento foi registrado no caixa.',
       });
 
       onSuccess();
       onClose();
     } catch (error) {
-      showToast({
-        type: 'error',
-        message: 'Erro ao processar pagamento',
-        description: parseSupabaseError(error).message,
-      });
+      showToast({ type: 'error', message: 'Erro ao processar pagamento', description: parseSupabaseError(error).message });
     } finally {
       setLoading(false);
     }
@@ -272,7 +310,48 @@ export default function PaymentModal({
         </div>
       </div>
 
+      {/* Crédito disponível */}
+      {totalCreditBalance > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Star className="w-4 h-4 text-blue-500" />
+            <span className="text-sm font-medium text-blue-800">
+              Crédito disponível: R$ {totalCreditBalance.toFixed(2)}
+            </span>
+          </div>
+          <div>
+            <label className="block text-xs text-blue-700 mb-1">Usar crédito (R$)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 text-sm">R$</span>
+              <input
+                type="number"
+                value={creditToUse || ''}
+                onChange={(e) => {
+                  const v = Math.min(
+                    parseFloat(e.target.value) || 0,
+                    Math.min(totalCreditBalance, remainingAmount)
+                  );
+                  setCreditToUse(Math.round(v * 100) / 100);
+                }}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-blue-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-text text-sm"
+                placeholder="0,00"
+                step="0.01"
+                min="0"
+                max={Math.min(totalCreditBalance, remainingAmount)}
+                disabled={loading}
+              />
+            </div>
+            {creditToUse > 0 && (
+              <p className="text-xs text-blue-600 mt-1">
+                Restante a pagar em dinheiro: <strong>R$ {effectiveRemaining.toFixed(2)}</strong>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Formas de Pagamento */}
+      {effectiveRemaining > 0.001 && (
       <div>
         <label className="block text-sm font-medium text-text mb-3">
           Formas de Pagamento:
@@ -334,6 +413,7 @@ export default function PaymentModal({
           Adicionar Forma de Pagamento
         </button>
       </div>
+      )}
 
       {/* Total Informado */}
       <div
@@ -362,7 +442,7 @@ export default function PaymentModal({
             isValidTotal() ? 'text-green-600' : 'text-orange-600'
           }`}
         >
-          {formatCurrency(getTotalInformed())}
+          {effectiveRemaining <= 0.001 ? '✓ Coberto por crédito' : formatCurrency(getTotalInformed())}
         </span>
       </div>
 
