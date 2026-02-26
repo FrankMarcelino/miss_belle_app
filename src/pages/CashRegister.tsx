@@ -5,7 +5,7 @@ import PaymentModal from '../components/PaymentModal';
 import { useToast } from '../components/Toast';
 import { parseSupabaseError } from '../lib/errorHandling';
 import BottomSheet from '../components/mobile/BottomSheet';
-import { Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2, Clock, User, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2, Clock, User, AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
 
 interface CashRegisterClosing {
   id: string;
@@ -454,6 +454,8 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showFinalizeSheet, setShowFinalizeSheet] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [showReopenSheet, setShowReopenSheet] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   const { showToast, ToastComponent } = useToast();
 
@@ -547,6 +549,37 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
     }
   }
 
+  async function doReopen(reason: string) {
+    setReopening(true);
+    try {
+      const notesEntry = `Reaberto em ${new Date().toLocaleString('pt-BR')}: ${reason}`;
+      const newNotes = currentClosing.notes
+        ? `${currentClosing.notes}\n${notesEntry}`
+        : notesEntry;
+
+      const { data: updated, error } = await supabase
+        .from('cash_register_closings')
+        .update({ is_finalized: false, finalized_at: null, notes: newNotes })
+        .eq('id', currentClosing.id)
+        .select('id');
+
+      if (error) throw error;
+
+      if (!updated || updated.length === 0) {
+        throw new Error('Permissão negada. Verifique se você tem acesso para reabrir este fechamento.');
+      }
+
+      setShowReopenSheet(false);
+      loadTransactions();
+      onUpdate();
+    } catch (err) {
+      const appErr = parseSupabaseError(err);
+      showToast('error', appErr.title, appErr.description);
+    } finally {
+      setReopening(false);
+    }
+  }
+
   // Calculate scenario
   const linkedTransactions = transactions.filter((t) => t.appointment);
   const expectedTotal =
@@ -599,9 +632,19 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
               </div>
             </div>
             {currentClosing.is_finalized ? (
-              <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 font-medium rounded-lg border border-green-200">
-                <Check className="w-5 h-5" />
-                Finalizado
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 font-medium rounded-lg border border-green-200">
+                  <Check className="w-5 h-5" />
+                  Finalizado
+                </div>
+                <button
+                  onClick={() => setShowReopenSheet(true)}
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors"
+                  title="Reabrir fechamento"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reabrir
+                </button>
               </div>
             ) : (
               <button
@@ -718,6 +761,13 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           onConfirm={doFinalize}
           onCancel={() => setShowFinalizeSheet(false)}
           isLoading={finalizing}
+        />
+
+        <ReopenSheet
+          isOpen={showReopenSheet}
+          onConfirm={doReopen}
+          onCancel={() => setShowReopenSheet(false)}
+          isLoading={reopening}
         />
       </div>
     </div>
@@ -858,6 +908,90 @@ function FinalizeConfirmSheet({
   if (isMobile) {
     return (
       <BottomSheet isOpen={isOpen} title="Finalizar Caixa" onClose={onCancel}>
+        {content}
+      </BottomSheet>
+    );
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-[70]">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
+        {content}
+      </div>
+    </div>
+  );
+}
+
+interface ReopenSheetProps {
+  isOpen: boolean;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+  isLoading: boolean;
+}
+
+function ReopenSheet({ isOpen, onConfirm, onCancel, isLoading }: ReopenSheetProps) {
+  const [reason, setReason] = useState('');
+  const isMobile = window.innerWidth < 768;
+  const canConfirm = reason.trim().length >= 10;
+
+  const content = (
+    <div className="space-y-5">
+      <div className="flex flex-col items-center text-center gap-3 pt-2">
+        <RotateCcw className="w-12 h-12 text-orange-500" />
+        <h3 className="text-lg font-semibold text-text">Reabrir Fechamento</h3>
+      </div>
+
+      <p className="text-sm text-text-muted text-center">
+        O caixa voltará para edição. O motivo ficará registrado nas observações.
+      </p>
+
+      <div>
+        <label className="block text-sm font-medium text-text mb-2">
+          Motivo da reabertura <span className="text-red-500">*</span>
+        </label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+          rows={3}
+          placeholder="Descreva o motivo da reabertura..."
+          disabled={isLoading}
+          autoFocus
+        />
+        {reason.trim().length > 0 && reason.trim().length < 10 && (
+          <p className="text-xs text-red-500 mt-1">
+            Mínimo de 10 caracteres ({reason.trim().length}/10)
+          </p>
+        )}
+      </div>
+
+      <div className="flex gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isLoading}
+          className="flex-1 px-4 py-3 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={() => onConfirm(reason.trim())}
+          disabled={!canConfirm || isLoading}
+          className="flex-1 px-4 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          Reabrir
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <BottomSheet isOpen={isOpen} title="Reabrir Caixa" onClose={onCancel}>
         {content}
       </BottomSheet>
     );
