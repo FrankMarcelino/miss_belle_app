@@ -21,7 +21,7 @@ interface PaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   appointmentId: string;
-  patientId: string;
+  patientId?: string;
   patientName: string;
   procedureName: string;
   totalAmount: number;
@@ -123,7 +123,7 @@ export default function PaymentModal({
       }
 
       setClosingId(closing?.id || null);
-    } catch (error) {
+    } catch {
       showToast({
         type: 'error',
         message: 'Erro ao carregar caixa',

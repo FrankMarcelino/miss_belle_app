@@ -901,7 +901,7 @@ function AppointmentDetailsContent({
   const [reopeningPayment, setReopeningPayment] = useState(false);
   const [showReversalModal, setShowReversalModal] = useState(false);
 
-  async function doReopenPayment(_reason: string) {
+  async function doReopenPayment(_: string) {
     setReopeningPayment(true);
     try {
       // 1. Buscar transações type='payment' do agendamento

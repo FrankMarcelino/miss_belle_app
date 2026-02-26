@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Loader2, Search, Mail, FileText, MessageCircle, History, Star, CheckCircle2, DollarSign, RotateCcw, AlertTriangle, Calendar, Clock, ChevronRight } from 'lucide-react';
+import { Plus, Loader2, Search, Mail, FileText, MessageCircle, History, Star, CheckCircle2, DollarSign, RotateCcw, AlertTriangle, Calendar, Clock, ChevronRight } from 'lucide-react';
 import { formatWhatsAppUrl } from '../lib/whatsapp';
 import BottomSheet from '../components/mobile/BottomSheet';
 import { parseSupabaseError } from '../lib/errorHandling';
@@ -246,7 +246,7 @@ function PatientDetailContent({ patient, currentUserId, showToast }: PatientDeta
         .order('appointment_date', { ascending: false })
         .order('appointment_time', { ascending: false });
       if (error) throw error;
-      setAppointments((data || []) as PatientAppointment[]);
+      setAppointments((data || []) as unknown as PatientAppointment[]);
     } catch (err) {
       const { title, description } = parseSupabaseError(err);
       showToast('error', title, description);
