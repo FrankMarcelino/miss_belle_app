@@ -58,6 +58,15 @@ interface ExpenseStats {
   pendingExpenses: number;
 }
 
+interface FinancialStats {
+  consolidated: number;      // pago + appointment_date <= hoje
+  suspended: number;         // pago + appointment_date > hoje
+  projected: number;         // sem pagamento + appointment_date > hoje
+  reversals: number;         // estornados no período
+  delinquency: number;       // completed + payment_status=none (valor estimado)
+  delinquencyCount: number;
+}
+
 const PAYMENT_LABELS: Record<string, string> = {
   dinheiro: 'Dinheiro',
   credito: 'Crédito',
@@ -98,6 +107,14 @@ export default function Dashboard() {
     totalExpenses: 0,
     paidExpenses: 0,
     pendingExpenses: 0,
+  });
+  const [financialStats, setFinancialStats] = useState<FinancialStats>({
+    consolidated: 0,
+    suspended: 0,
+    projected: 0,
+    reversals: 0,
+    delinquency: 0,
+    delinquencyCount: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -174,6 +191,7 @@ export default function Dashboard() {
         loadTopProcedures(),
         loadPaymentStats(),
         loadExpenseStats(),
+        loadFinancialStats(),
       ];
       await Promise.all(promises);
     } catch {
@@ -437,6 +455,68 @@ export default function Dashboard() {
     }
   }
 
+  async function loadFinancialStats() {
+    if (!user) return;
+    try {
+      const { start, end } = getDateRange();
+      const today = new Date().toISOString().split('T')[0];
+
+      let query = supabase
+        .from('appointments')
+        .select('status, payment_status, appointment_date, procedure:procedures(default_price)')
+        .gte('appointment_date', start)
+        .lte('appointment_date', end)
+        .neq('payment_status', 'legacy');
+
+      if (!isSuperAdmin && user) {
+        query = query.eq('professional_id', user.id);
+      }
+
+      const { data: appts, error } = await query;
+      if (error) throw error;
+
+      const price = (apt: { procedure: unknown }) =>
+        (apt.procedure as { default_price?: number } | null)?.default_price ?? 0;
+
+      const consolidated = (appts || [])
+        .filter((a) => ['paid', 'partial'].includes(a.payment_status ?? '') && a.appointment_date <= today)
+        .reduce((s, a) => s + price(a), 0);
+
+      const suspended = (appts || [])
+        .filter((a) => a.payment_status === 'paid' && a.appointment_date > today)
+        .reduce((s, a) => s + price(a), 0);
+
+      const projected = (appts || [])
+        .filter(
+          (a) =>
+            !['paid', 'reversed', 'credited'].includes(a.payment_status ?? '') &&
+            a.appointment_date > today &&
+            a.status !== 'cancelled'
+        )
+        .reduce((s, a) => s + price(a), 0);
+
+      const reversals = (appts || [])
+        .filter((a) => a.payment_status === 'reversed')
+        .reduce((s, a) => s + price(a), 0);
+
+      const delinquentAppts = (appts || []).filter(
+        (a) => a.status === 'completed' && (!a.payment_status || a.payment_status === 'none')
+      );
+      const delinquency = delinquentAppts.reduce((s, a) => s + price(a), 0);
+
+      setFinancialStats({
+        consolidated,
+        suspended,
+        projected,
+        reversals,
+        delinquency,
+        delinquencyCount: delinquentAppts.length,
+      });
+    } catch {
+      // ignore
+    }
+  }
+
   function handleModeChange(mode: Period) {
     setPeriodMode(mode);
     setPeriodOffset(0);
@@ -462,14 +542,14 @@ export default function Dashboard() {
       color: 'bg-primary',
     },
     {
-      label: 'Total Faturado',
-      value: `R$ ${stats.totalRevenue.toFixed(2)}`,
+      label: 'Receita Consolidada',
+      value: `R$ ${financialStats.consolidated.toFixed(2)}`,
       icon: DollarSign,
       color: 'bg-accent',
     },
     {
       label: 'Ticket Médio',
-      value: `R$ ${stats.ticketMedio.toFixed(2)}`,
+      value: `R$ ${stats.completedAppointments > 0 ? (financialStats.consolidated / stats.completedAppointments).toFixed(2) : '0.00'}`,
       icon: BarChart2,
       color: 'bg-primary',
     },
@@ -536,8 +616,7 @@ export default function Dashboard() {
           </span>
           <button
             onClick={() => setPeriodOffset((o) => o + 1)}
-            disabled={periodOffset >= 0}
-            className="p-1.5 rounded-md text-text-muted hover:bg-champagne-nuvem hover:text-text transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 rounded-md text-text-muted hover:bg-champagne-nuvem hover:text-text transition-colors"
             aria-label="Próximo período"
           >
             <ChevronRight className="w-4 h-4" />
@@ -573,6 +652,83 @@ export default function Dashboard() {
             </div>
           );
         })}
+      </div>
+
+      {/* Financial breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Receita */}
+        <div className="bg-background-card rounded-xl p-5 border border-accent/10 shadow-card">
+          <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-green-600" />
+            Receita do Período
+          </h3>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Consolidada <span className="text-[10px]">(paga + realizada)</span></span>
+              <span className="font-semibold text-green-600">R$ {financialStats.consolidated.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Suspensa <span className="text-[10px]">(paga, atend. futuro)</span></span>
+              <span className="font-semibold text-blue-600">R$ {financialStats.suspended.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-text-muted">Projetada <span className="text-[10px]">(agend. futuro s/ pgto)</span></span>
+              <span className="font-semibold text-text-muted">R$ {financialStats.projected.toFixed(2)}</span>
+            </div>
+            {financialStats.reversals > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-text-muted">Estornos</span>
+                <span className="font-semibold text-red-500">- R$ {financialStats.reversals.toFixed(2)}</span>
+              </div>
+            )}
+            <div className="pt-2 border-t border-accent/10 flex items-center justify-between text-sm">
+              <span className="font-medium text-text">Total potencial</span>
+              <span className="font-bold text-text">
+                R$ {(financialStats.consolidated + financialStats.suspended + financialStats.projected - financialStats.reversals).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Inadimplência + Despesas */}
+        <div className="space-y-4">
+          {financialStats.delinquencyCount > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
+                <DollarSign className="w-4 h-4" />
+                Inadimplência
+              </h3>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-red-600">
+                  {financialStats.delinquencyCount} atendimento{financialStats.delinquencyCount !== 1 ? 's' : ''} sem pagamento
+                </span>
+                <span className="font-bold text-red-700">R$ {financialStats.delinquency.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+          <div className="bg-background-card rounded-xl p-4 border border-accent/10 shadow-card">
+            <h3 className="text-sm font-semibold text-text mb-3 flex items-center gap-2">
+              <BarChart2 className="w-4 h-4 text-orange-500" />
+              Despesas
+            </h3>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-text-muted">Pagas</span>
+                <span className="font-medium text-text">R$ {expenseStats.paidExpenses.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Previstas</span>
+                <span className="font-medium text-text">R$ {expenseStats.pendingExpenses.toFixed(2)}</span>
+              </div>
+              <div className="pt-1.5 border-t border-accent/10 flex justify-between">
+                <span className="font-medium text-text">Resultado</span>
+                <span className={`font-bold ${financialStats.consolidated - expenseStats.totalExpenses >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  R$ {(financialStats.consolidated - expenseStats.totalExpenses).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Charts row */}
