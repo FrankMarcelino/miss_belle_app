@@ -94,7 +94,7 @@ export default function PaymentModal({
   async function loadCredits(userId: string) {
     if (!patientId) return;
     const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('patient_credits')
       .select('id, amount_remaining, expires_at')
       .eq('patient_id', patientId)
@@ -102,7 +102,12 @@ export default function PaymentModal({
       .gt('amount_remaining', 0)
       .or(`expires_at.is.null,expires_at.gte.${today}`)
       .order('expires_at', { ascending: true, nullsFirst: false });
+    if (error) {
+      console.error('[loadCredits] erro:', error);
+      return;
+    }
     const credits = data || [];
+    console.log('[loadCredits] patientId:', patientId, 'professionalId:', userId, 'credits:', credits);
     setAvailableCredits(credits);
     setTotalCreditBalance(credits.reduce((s, c) => s + c.amount_remaining, 0));
   }

@@ -63,8 +63,7 @@ export default function Procedures() {
         proceduresList.sort((a, b) => a.name.localeCompare(b.name));
         setProcedures(proceduresList);
       }
-    } catch (error) {
-    } finally {
+    } catch {} finally {
       setLoading(false);
     }
   }
@@ -371,16 +370,18 @@ function EditProcedureModal({ procedure, onClose, onSuccess }: EditProcedureModa
     setLoading(true);
 
     try {
-      const { error: updateError } = await supabase
+      const { data: updated, error: updateError } = await supabase
         .from('procedures')
         .update({
           name,
           duration_minutes: parseInt(durationMinutes),
           default_price: parseFloat(defaultPrice),
         })
-        .eq('id', procedure.id);
+        .eq('id', procedure.id)
+        .select();
 
       if (updateError) throw updateError;
+      if (!updated || updated.length === 0) throw new Error('Sem permissão para editar este procedimento. Verifique as políticas de acesso.');
 
       onSuccess();
     } catch (error) {

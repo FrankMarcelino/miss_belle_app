@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Appointment, ShowToastFn } from '../../types/agenda';
-import { getPaymentStatusConfig, getStatusColor, getStatusLabel } from '../../lib/appointmentUtils';
+import { getPaymentBadge } from '../../lib/appointmentUtils';
 import { parseSupabaseError } from '../../lib/errorHandling';
 import { formatWhatsAppUrl } from '../../lib/whatsapp';
 import EditAppointmentForm from './forms/EditAppointmentForm';
@@ -11,7 +11,7 @@ import ReopenCashRegisterSheet from '../ReopenCashRegisterSheet';
 import ReversalModal from '../ReversalModal';
 import {
   MessageCircle, CalendarClock, DollarSign, AlertTriangle, RotateCcw,
-  CheckCircle2, Circle,
+  CheckCircle2, Circle, Loader2,
 } from 'lucide-react';
 
 interface AppointmentDetailsSheetProps {
@@ -94,6 +94,7 @@ export default function AppointmentDetailsSheet({
   const [showReopenSheet, setShowReopenSheet] = useState(false);
   const [reopeningPayment, setReopeningPayment] = useState(false);
   const [showReversalModal, setShowReversalModal] = useState(false);
+  const [showUndoComplete, setShowUndoComplete] = useState(false);
   // Local effective status — updates immediately after DB change so UI reflects correct state
   // without waiting for parent to re-fetch and pass a new appointment prop.
   const [effectiveStatus, setEffectiveStatus] = useState<Appointment['status']>(appointment.status);
@@ -106,10 +107,11 @@ export default function AppointmentDetailsSheet({
     const status = effectiveStatus;
     if (status === 'cancelled') return null;
     if (status === 'completed') {
-      if (!ps || ps === 'none' || ps === 'reopened') {
+      // partial = calção pago mas restante pendente; none/null/reopened = sem pagamento
+      if (!ps || ps === 'none' || ps === 'reopened' || ps === 'partial') {
         return { label: 'Registrar Pagamento', action: () => setShowPaymentModal(true), color: 'bg-green-600 hover:bg-green-700' };
       }
-      return null; // read-only
+      return null; // paid / reversed / credited / legacy → read-only
     }
     if (status === 'confirmed') {
       if (ps === 'paid') {
@@ -169,6 +171,53 @@ export default function AppointmentDetailsSheet({
     }
   }
 
+  async function handleUndoComplete() {
+    setUpdating(true);
+    try {
+      // Se havia pagamento registrado, remove as transações e recalcula o caixa
+      if (ps === 'paid' || ps === 'partial') {
+        const { data: txs } = await supabase
+          .from('cash_register_transactions')
+          .select('id, closing_id, amount')
+          .eq('appointment_id', appointment.id)
+          .eq('type', 'payment');
+
+        if (txs?.length) {
+          const closingId = txs[0].closing_id;
+          await supabase.from('cash_register_transactions').delete().in('id', txs.map((t: { id: string }) => t.id));
+          const { data: rem } = await supabase
+            .from('cash_register_transactions')
+            .select('amount, type')
+            .eq('closing_id', closingId);
+          const newTotal = (rem || []).reduce(
+            (s: number, t: { amount: number; type: string }) =>
+              t.type === 'reversal' ? s - t.amount : s + t.amount,
+            0
+          );
+          await supabase
+            .from('cash_register_closings')
+            .update({ total_amount: Math.max(0, newTotal) })
+            .eq('id', closingId);
+        }
+      }
+
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'confirmed', payment_status: 'none', has_payment: false })
+        .eq('id', appointment.id);
+      if (error) throw error;
+
+      setEffectiveStatus('confirmed');
+      setShowUndoComplete(false);
+      showToast('success', 'Conclusão desfeita', 'Atendimento voltou para Confirmado.');
+      onRefresh();
+    } catch (err) {
+      showToast('error', 'Erro', parseSupabaseError(err).title);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
   async function updateStatus(newStatus: 'scheduled' | 'confirmed' | 'completed' | 'cancelled') {
     setUpdating(true);
     try {
@@ -217,8 +266,10 @@ export default function AppointmentDetailsSheet({
             professional_id: user.id,
             amount_original: appointment.downpayment_amount,
             amount_remaining: appointment.downpayment_amount,
-            source_appointment_id: appointment.id,
+            origin: 'cancellation',
+            origin_appointment_id: appointment.id,
             notes: `Crédito de cancelamento — ${appointment.procedure?.name ?? ''}`,
+            created_by: user.id,
           });
         }
         updateData.payment_status = 'credited';
@@ -259,7 +310,7 @@ export default function AppointmentDetailsSheet({
     }
   }
 
-  async function doReopenPayment(_: string) {
+  async function doReopenPayment(_reason: string) {
     setReopeningPayment(true);
     try {
       const { data: txs, error: txErr } = await supabase
@@ -320,7 +371,7 @@ export default function AppointmentDetailsSheet({
   }
 
   const primaryAction = getPrimaryAction();
-  const pc = getPaymentStatusConfig(ps);
+  const pc = getPaymentBadge(ps, effectiveStatus, appointment.procedure?.default_price);
   const isCancelled = effectiveStatus === 'cancelled';
   const isCompleted = effectiveStatus === 'completed';
   const canShowPaymentActions = ps === 'paid' || ps === 'partial';
@@ -330,17 +381,16 @@ export default function AppointmentDetailsSheet({
       {/* Status Stepper */}
       <StatusStepper status={effectiveStatus} />
 
-      {/* Payment badge */}
+      {/* Payment badge — sempre visível quando há custo */}
       {pc && (
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${pc.bg} ${pc.color}`}>
           <pc.Icon className="w-4 h-4 flex-shrink-0" />
           <span className="font-medium">{pc.label}</span>
-        </div>
-      )}
-      {isCompleted && (!ps || ps === 'none') && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-amber-50 border-amber-200 text-amber-700 text-sm">
-          <AlertTriangle className="w-4 h-4" />
-          <span>Pagamento não registrado</span>
+          {appointment.procedure?.default_price && appointment.procedure.default_price > 0 && (
+            <span className="ml-auto font-bold">
+              R$ {appointment.procedure.default_price.toFixed(2)}
+            </span>
+          )}
         </div>
       )}
 
@@ -523,6 +573,45 @@ export default function AppointmentDetailsSheet({
                 <RotateCcw className="w-4 h-4" />
                 Reabrir
               </button>
+            </div>
+          )}
+
+          {/* Desfazer conclusão — volta para Confirmado */}
+          {isCompleted && !showUndoComplete && (
+            <button
+              onClick={() => setShowUndoComplete(true)}
+              disabled={updating}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-orange-200 text-orange-600 hover:bg-orange-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Desfazer conclusão
+            </button>
+          )}
+
+          {showUndoComplete && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 space-y-3">
+              <p className="text-sm text-orange-800 font-medium">Desfazer conclusão?</p>
+              <p className="text-xs text-orange-700">
+                O status voltará para "Confirmado".
+                {(ps === 'paid' || ps === 'partial') && ' O pagamento registrado será removido do caixa.'}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowUndoComplete(false)}
+                  disabled={updating}
+                  className="flex-1 px-3 py-2 text-sm border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleUndoComplete}
+                  disabled={updating}
+                  className="flex-1 px-3 py-2 text-sm bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  {updating && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Confirmar
+                </button>
+              </div>
             </div>
           )}
         </div>

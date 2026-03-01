@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Appointment, ShowToastFn } from '../../types/agenda';
-import { getPaymentStatusConfig, getStatusColor, getStatusLabel } from '../../lib/appointmentUtils';
+import { getPaymentBadge, getStatusColor, getStatusLabel } from '../../lib/appointmentUtils';
 import BottomSheet from '../mobile/BottomSheet';
 import AppointmentDetailsSheet from './AppointmentDetailsSheet';
-import { Clock } from 'lucide-react';
+import PaymentModal from '../PaymentModal';
+import { Clock, DollarSign } from 'lucide-react';
 
 interface AppointmentCardProps {
   appointment: Appointment;
@@ -14,7 +15,15 @@ interface AppointmentCardProps {
 
 export default function AppointmentCard({ appointment, onRefresh, showToast, isNext }: AppointmentCardProps) {
   const [showDetails, setShowDetails] = useState(false);
-  const pc = getPaymentStatusConfig(appointment.payment_status);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const pc = getPaymentBadge(appointment.payment_status, appointment.status, appointment.procedure?.default_price);
+
+  const needsPayment =
+    appointment.status === 'completed' &&
+    (!appointment.payment_status ||
+      appointment.payment_status === 'none' ||
+      appointment.payment_status === 'partial' ||
+      appointment.payment_status === 'reopened');
 
   return (
     <>
@@ -59,6 +68,15 @@ export default function AppointmentCard({ appointment, onRefresh, showToast, isN
               <p className="text-text-muted text-sm truncate">Profissional: {appointment.professional.full_name}</p>
             )}
           </div>
+          {needsPayment && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowPaymentModal(true); }}
+              className="flex-shrink-0 self-center flex items-center gap-1.5 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+            >
+              <DollarSign className="w-4 h-4" />
+              Pagar
+            </button>
+          )}
         </div>
       </div>
 
@@ -70,6 +88,21 @@ export default function AppointmentCard({ appointment, onRefresh, showToast, isN
           showToast={showToast}
         />
       </BottomSheet>
+
+      {needsPayment && showPaymentModal && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          appointmentId={appointment.id}
+          patientId={appointment.patient_id}
+          patientName={appointment.patient?.full_name || ''}
+          procedureName={appointment.procedure?.name || ''}
+          totalAmount={appointment.procedure?.default_price || 0}
+          downpaymentAmount={appointment.downpayment_amount}
+          downpaymentMethod={appointment.downpayment_method}
+          onSuccess={() => { setShowPaymentModal(false); onRefresh(); }}
+        />
+      )}
     </>
   );
 }

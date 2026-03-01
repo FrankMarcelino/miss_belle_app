@@ -6,7 +6,11 @@ import { useToast } from '../components/Toast';
 import { parseSupabaseError } from '../lib/errorHandling';
 import BottomSheet from '../components/mobile/BottomSheet';
 import ReopenCashRegisterSheet from '../components/ReopenCashRegisterSheet';
-import { Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2, Clock, User, AlertTriangle, CheckCircle2, RotateCcw } from 'lucide-react';
+import EditTransactionSheet from '../components/EditTransactionSheet';
+import {
+  Plus, Loader2, DollarSign, X, Check, Calendar, TrendingUp, Trash2,
+  AlertTriangle, CheckCircle2, RotateCcw, ChevronDown, ChevronUp, Pencil,
+} from 'lucide-react';
 
 interface CashRegisterClosing {
   id: string;
@@ -26,6 +30,7 @@ interface Transaction {
   appointment_id: string | null;
   amount: number;
   payment_method: string;
+  type: string;
   notes: string | null;
   created_at: string;
   appointment?: {
@@ -35,65 +40,150 @@ interface Transaction {
   };
 }
 
+interface TodayAppt {
+  id: string;
+  appointment_time: string;
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  payment_status: string | null;
+  downpayment_amount: number;
+  downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+  patient_id: string;
+  patient: { full_name: string } | null;
+  procedure: { name: string; default_price: number } | null;
+}
+
 interface Professional {
   id: string;
   full_name: string;
 }
 
-interface PendingAppointment {
-  id: string;
-  appointment_time: string;
-  downpayment_amount: number;
-  downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
-  patient: { full_name: string };
-  procedure: { name: string; default_price: number };
-}
+const METHOD_LABELS: Record<string, string> = {
+  dinheiro: 'Dinheiro',
+  pix: 'PIX',
+  credito: 'Crédito',
+  debito: 'Débito',
+};
 
 export default function CashRegister() {
   const { user, isSuperAdmin } = useAuth();
-  const [closings, setClosings] = useState<CashRegisterClosing[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedClosing, setSelectedClosing] = useState<CashRegisterClosing | null>(null);
-  const [showTransactions, setShowTransactions] = useState(false);
-  const [selectedProfessional, setSelectedProfessional] = useState<string>('');
-  const [professionals, setProfessionals] = useState<Professional[]>([]);
-  const [dateFilter, setDateFilter] = useState<string>('');
+  const today = new Date().toISOString().split('T')[0];
 
-  const [pendingAppointments, setPendingAppointments] = useState<PendingAppointment[]>([]);
-  const [loadingPending, setLoadingPending] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<PendingAppointment | null>(null);
+  const [professionals, setProfessionals] = useState<Professional[]>([]);
+  const [selectedProfessional, setSelectedProfessional] = useState('');
+
+  // Today data
+  const [todayAppts, setTodayAppts] = useState<TodayAppt[]>([]);
+  const [todayTransactions, setTodayTransactions] = useState<Transaction[]>([]);
+  const [todayClosing, setTodayClosing] = useState<CashRegisterClosing | null>(null);
+  const [loadingToday, setLoadingToday] = useState(false);
+
+  // History
+  const [closings, setClosings] = useState<CashRegisterClosing[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [expandedClosingId, setExpandedClosingId] = useState<string | null>(null);
+  const [expandedTransactions, setExpandedTransactions] = useState<Record<string, Transaction[]>>({});
+  const [loadingExpanded, setLoadingExpanded] = useState<Record<string, boolean>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmFinalizeId, setConfirmFinalizeId] = useState<string | null>(null);
+  const [finalizingHistoryId, setFinalizingHistoryId] = useState<string | null>(null);
+  const [undoCompleteId, setUndoCompleteId] = useState<string | null>(null);
+
+  // Modals
+  const [selectedAppt, setSelectedAppt] = useState<TodayAppt | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [showEditTx, setShowEditTx] = useState(false);
+  const [showAddTx, setShowAddTx] = useState(false);
+  const [showFinalizeSheet, setShowFinalizeSheet] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [reopeningClosing, setReopeningClosing] = useState<CashRegisterClosing | null>(null);
+  const [reopening, setReopening] = useState(false);
 
   const { showToast, ToastComponent } = useToast();
 
+  const profId = isSuperAdmin ? (selectedProfessional || null) : (user?.id ?? null);
+
   useEffect(() => {
-    if (isSuperAdmin) {
-      loadProfessionals();
-    }
-    loadClosings();
-    loadPendingAppointments();
-  }, [user, isSuperAdmin, selectedProfessional, dateFilter]);
+    if (isSuperAdmin) loadProfessionals();
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (profId) loadToday();
+    loadHistory();
+  }, [user, isSuperAdmin, selectedProfessional]);
 
   async function loadProfessionals() {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('id, full_name')
         .eq('is_active', true)
         .order('full_name');
-
-      if (error) throw error;
       setProfessionals(data || []);
-    } catch {
+    } catch {}
+  }
+
+  async function loadToday() {
+    if (!profId) return;
+    setLoadingToday(true);
+    try {
+      const { data: appts, error: apptErr } = await supabase
+        .from('appointments')
+        .select(`
+          id, appointment_time, status, payment_status,
+          downpayment_amount, downpayment_method, patient_id,
+          patient:patients(full_name),
+          procedure:procedures(name, default_price)
+        `)
+        .eq('appointment_date', today)
+        .eq('professional_id', profId)
+        .neq('status', 'cancelled')
+        .order('appointment_time');
+
+      if (apptErr) throw apptErr;
+      setTodayAppts((appts || []) as unknown as TodayAppt[]);
+
+      // Today's closing (latest for today, open or finalized)
+      const { data: closingRows } = await supabase
+        .from('cash_register_closings')
+        .select('*, professional:profiles(full_name)')
+        .eq('professional_id', profId)
+        .eq('closing_date', today)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      const closing = closingRows?.[0] ?? null;
+      setTodayClosing(closing);
+
+      if (closing) {
+        const { data: txs } = await supabase
+          .from('cash_register_transactions')
+          .select(`
+            *,
+            appointment:appointments(
+              downpayment_amount,
+              patient:patients(full_name),
+              procedure:procedures(name, default_price)
+            )
+          `)
+          .eq('closing_id', closing.id)
+          .order('created_at');
+        setTodayTransactions((txs || []) as unknown as Transaction[]);
+      } else {
+        setTodayTransactions([]);
+      }
+    } catch {} finally {
+      setLoadingToday(false);
     }
   }
 
-  async function loadClosings() {
+  async function loadHistory() {
+    setLoadingHistory(true);
     try {
-      setLoading(true);
       let query = supabase
         .from('cash_register_closings')
         .select('*, professional:profiles(full_name)')
+        .neq('closing_date', today)
         .order('closing_date', { ascending: false });
 
       if (!isSuperAdmin && user) {
@@ -102,384 +192,18 @@ export default function CashRegister() {
         query = query.eq('professional_id', selectedProfessional);
       }
 
-      if (dateFilter) {
-        query = query.eq('closing_date', dateFilter);
-      }
-
       const { data, error } = await query;
-
       if (error) throw error;
       setClosings(data || []);
-    } catch {
-    } finally {
-      setLoading(false);
+    } catch {} finally {
+      setLoadingHistory(false);
     }
   }
 
-  async function loadPendingAppointments() {
+  async function loadExpandedTransactions(closingId: string) {
+    setLoadingExpanded(prev => ({ ...prev, [closingId]: true }));
     try {
-      setLoadingPending(true);
-      const today = new Date().toISOString().split('T')[0];
-
-      let query = supabase
-        .from('appointments')
-        .select(`
-          id,
-          appointment_time,
-          downpayment_amount,
-          downpayment_method,
-          patient:patients(full_name),
-          procedure:procedures(name, default_price)
-        `)
-        .eq('appointment_date', today)
-        .in('status', ['scheduled', 'confirmed'])
-        .order('appointment_time');
-
-      if (!isSuperAdmin && user) {
-        query = query.eq('professional_id', user.id);
-      } else if (selectedProfessional) {
-        query = query.eq('professional_id', selectedProfessional);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setPendingAppointments((data || []) as unknown as PendingAppointment[]);
-    } catch {
-    } finally {
-      setLoadingPending(false);
-    }
-  }
-
-  async function createClosing() {
-    const today = new Date().toISOString().split('T')[0];
-
-    try {
-      const { data: existing } = await supabase
-        .from('cash_register_closings')
-        .select('id')
-        .eq('professional_id', user?.id)
-        .eq('closing_date', today)
-        .maybeSingle();
-
-      if (existing) {
-        showToast('warning', 'Fechamento já existe', 'Já existe um fechamento para hoje. Abra-o para adicionar transações.');
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('cash_register_closings')
-        .insert({
-          professional_id: user?.id,
-          closing_date: today,
-          total_amount: 0,
-        })
-        .select('*, professional:profiles(full_name)')
-        .single();
-
-      if (error) throw error;
-
-      setSelectedClosing(data);
-      setShowTransactions(true);
-      loadClosings();
-    } catch (error) {
-      const appErr = parseSupabaseError(error);
-      showToast('error', appErr.title, appErr.description);
-    }
-  }
-
-  function openClosing(closing: CashRegisterClosing) {
-    setSelectedClosing(closing);
-    setShowTransactions(true);
-  }
-
-  function handleClosePayment(appointment: PendingAppointment) {
-    setSelectedAppointment(appointment);
-    setShowPaymentModal(true);
-  }
-
-  function handlePaymentSuccess() {
-    setShowPaymentModal(false);
-    setSelectedAppointment(null);
-    loadPendingAppointments();
-    loadClosings();
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {ToastComponent}
-
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-text">
-            {isSuperAdmin ? 'Fechamentos de Caixa' : 'Fechar Caixa'}
-          </h1>
-          <p className="text-text-muted mt-1">
-            {isSuperAdmin
-              ? 'Visualize e gerencie os fechamentos de caixa'
-              : 'Registre suas receitas diárias'}
-          </p>
-        </div>
-        {!isSuperAdmin && (
-          <button
-            onClick={createClosing}
-            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-soft"
-          >
-            <Plus className="w-5 h-5" />
-            Novo Fechamento
-          </button>
-        )}
-      </div>
-
-      <div className="bg-background-card rounded-xl border border-accent/10 shadow-card">
-        <div className="p-6 border-b border-accent/10 space-y-4">
-          <div className="flex flex-wrap gap-4">
-            {isSuperAdmin && (
-              <div className="flex-1 min-w-[200px]">
-                <label className="block text-sm font-medium text-text mb-2">
-                  Profissional
-                </label>
-                <select
-                  value={selectedProfessional}
-                  onChange={(e) => setSelectedProfessional(e.target.value)}
-                  className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                >
-                  <option value="">Todos os profissionais</option>
-                  {professionals.map((prof) => (
-                    <option key={prof.id} value={prof.id}>
-                      {prof.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="flex-1 min-w-[200px]">
-              <label className="block text-sm font-medium text-text mb-2">
-                Data
-              </label>
-              <input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-              />
-            </div>
-
-            {(selectedProfessional || dateFilter) && (
-              <div className="flex items-end">
-                <button
-                  onClick={() => {
-                    setSelectedProfessional('');
-                    setDateFilter('');
-                  }}
-                  className="px-4 py-2 text-sm text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
-                >
-                  Limpar Filtros
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {pendingAppointments.length > 0 && (
-          <div className="border-b border-accent/10 p-6">
-            <h2 className="text-lg font-semibold text-text mb-4 flex items-center gap-2">
-              <Clock className="w-5 h-5" />
-              Atendimentos Pendentes de Pagamento
-            </h2>
-            {loadingPending ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 text-primary animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {pendingAppointments.map((appointment) => (
-                  <div
-                    key={appointment.id}
-                    className="bg-white rounded-xl p-4 border shadow-card border-accent/10 hover:shadow-card-hover transition-all"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="font-semibold text-text">
-                            {appointment.appointment_time.substring(0, 5)}
-                          </span>
-                          <span className="text-text flex items-center gap-1">
-                            <User className="w-4 h-4" />
-                            {appointment.patient?.full_name}
-                          </span>
-                        </div>
-                        <p className="text-sm text-text-muted mb-2">
-                          {appointment.procedure?.name} - R$ {appointment.procedure?.default_price.toFixed(2)}
-                        </p>
-                        {appointment.downpayment_amount > 0 && (
-                          <div className="bg-green-50 border border-green-200 rounded px-2 py-1 inline-block">
-                            <p className="text-xs text-green-700 font-medium">
-                              Calção: R$ {appointment.downpayment_amount.toFixed(2)} ({
-                                appointment.downpayment_method === 'dinheiro' ? 'Dinheiro' :
-                                appointment.downpayment_method === 'credito' ? 'Crédito' :
-                                appointment.downpayment_method === 'debito' ? 'Débito' : 'PIX'
-                              })
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleClosePayment(appointment)}
-                        className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-soft flex items-center gap-2 whitespace-nowrap"
-                      >
-                        <DollarSign className="w-4 h-4" />
-                        Fechar Caixa
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {closings.length === 0 ? (
-          <div className="p-12 text-center">
-            <DollarSign className="w-12 h-12 text-text-muted mx-auto mb-4" />
-            <p className="text-text-muted">
-              {dateFilter || selectedProfessional
-                ? 'Nenhum fechamento encontrado com os filtros aplicados'
-                : 'Nenhum fechamento cadastrado'}
-            </p>
-          </div>
-        ) : (
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {closings.map((closing) => (
-                <div
-                  key={closing.id}
-                  onClick={() => openClosing(closing)}
-                  className={`bg-white rounded-xl p-5 border shadow-card cursor-pointer hover:shadow-card-hover transition-all ${
-                    closing.is_finalized
-                      ? 'border-green-200 bg-green-50'
-                      : 'border-accent/10'
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-5 h-5 text-text-muted" />
-                      <span className="font-semibold text-text">
-                        {new Date(closing.closing_date).toLocaleDateString('pt-BR')}
-                      </span>
-                    </div>
-                    {closing.is_finalized ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
-                        <Check className="w-3 h-3" />
-                        Finalizado
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded-full border border-accent/10">
-                        Em Aberto
-                      </span>
-                    )}
-                  </div>
-
-                  {closing.professional && (
-                    <p className="text-sm text-text-muted mb-3">
-                      {closing.professional.full_name}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-2 text-2xl font-bold text-text">
-                    <DollarSign className="w-6 h-6" />
-                    R$ {closing.total_amount.toFixed(2)}
-                  </div>
-
-                  {closing.notes && (
-                    <p className="mt-3 text-sm text-text-muted line-clamp-2">
-                      {closing.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {showTransactions && selectedClosing && (
-        <TransactionsModal
-          closing={selectedClosing}
-          onClose={() => {
-            setShowTransactions(false);
-            setSelectedClosing(null);
-            loadClosings();
-          }}
-          onUpdate={loadClosings}
-        />
-      )}
-
-      {showPaymentModal && selectedAppointment && (
-        <PaymentModal
-          isOpen={showPaymentModal}
-          onClose={() => setShowPaymentModal(false)}
-          appointmentId={selectedAppointment.id}
-          patientName={selectedAppointment.patient?.full_name || ''}
-          procedureName={selectedAppointment.procedure?.name || ''}
-          totalAmount={selectedAppointment.procedure?.default_price || 0}
-          downpaymentAmount={selectedAppointment.downpayment_amount}
-          downpaymentMethod={selectedAppointment.downpayment_method}
-          onSuccess={handlePaymentSuccess}
-        />
-      )}
-    </div>
-  );
-}
-
-interface TransactionsModalProps {
-  closing: CashRegisterClosing;
-  onClose: () => void;
-  onUpdate: () => void;
-}
-
-function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProps) {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddTransaction, setShowAddTransaction] = useState(false);
-  const [currentClosing, setCurrentClosing] = useState<CashRegisterClosing>(closing);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [showFinalizeSheet, setShowFinalizeSheet] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
-  const [showReopenSheet, setShowReopenSheet] = useState(false);
-  const [reopening, setReopening] = useState(false);
-
-  const { showToast, ToastComponent } = useToast();
-
-  useEffect(() => {
-    loadTransactions();
-  }, [closing.id]);
-
-  async function loadTransactions() {
-    try {
-      setLoading(true);
-
-      const { data: closingData, error: closingError } = await supabase
-        .from('cash_register_closings')
-        .select('*, professional:profiles(full_name)')
-        .eq('id', closing.id)
-        .single();
-
-      if (closingError) throw closingError;
-      if (closingData) {
-        setCurrentClosing(closingData);
-      }
-
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('cash_register_transactions')
         .select(`
           *,
@@ -489,36 +213,119 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
             procedure:procedures(name, default_price)
           )
         `)
-        .eq('closing_id', closing.id)
+        .eq('closing_id', closingId)
         .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setTransactions(data || []);
-    } catch {
-    } finally {
-      setLoading(false);
+      setExpandedTransactions(prev => ({
+        ...prev,
+        [closingId]: (data || []) as unknown as Transaction[],
+      }));
+    } catch {} finally {
+      setLoadingExpanded(prev => ({ ...prev, [closingId]: false }));
     }
   }
 
-  async function deleteTransaction(transactionId: string) {
+  async function toggleExpand(closingId: string) {
+    if (expandedClosingId === closingId) {
+      setExpandedClosingId(null);
+      return;
+    }
+    setExpandedClosingId(closingId);
+    if (!expandedTransactions[closingId]) {
+      await loadExpandedTransactions(closingId);
+    }
+  }
+
+  async function deleteHistoryTransaction(transactionId: string, closingId: string) {
     try {
       const { error } = await supabase
         .from('cash_register_transactions')
         .delete()
         .eq('id', transactionId);
-
       if (error) throw error;
 
+      // Recalculate closing total
+      const { data: txs } = await supabase
+        .from('cash_register_transactions')
+        .select('amount, type')
+        .eq('closing_id', closingId);
+      const newTotal = (txs || []).reduce(
+        (s: number, t: { amount: number; type: string }) =>
+          t.type === 'reversal' ? s - t.amount : s + t.amount,
+        0
+      );
+      await supabase
+        .from('cash_register_closings')
+        .update({ total_amount: Math.max(0, newTotal) })
+        .eq('id', closingId);
+
       setConfirmDeleteId(null);
-      loadTransactions();
-      onUpdate();
+      loadHistory();
+      await loadExpandedTransactions(closingId);
     } catch (err) {
-      const appErr = parseSupabaseError(err);
-      showToast('error', appErr.title, appErr.description);
+      showToast('error', 'Erro ao excluir', parseSupabaseError(err).title);
+    }
+  }
+
+  async function finalizeHistoryClosing(closingId: string) {
+    setFinalizingHistoryId(closingId);
+    try {
+      const { data: updated, error } = await supabase
+        .from('cash_register_closings')
+        .update({ is_finalized: true, finalized_at: new Date().toISOString() })
+        .eq('id', closingId)
+        .select('id');
+      if (error) throw error;
+      if (!updated || updated.length === 0) throw new Error('Permissão negada.');
+      setConfirmFinalizeId(null);
+      showToast('success', 'Fechamento finalizado', '');
+      loadHistory();
+      await loadExpandedTransactions(closingId);
+    } catch (err) {
+      showToast('error', 'Erro', parseSupabaseError(err).title);
+    } finally {
+      setFinalizingHistoryId(null);
+    }
+  }
+
+  async function handleUndoComplete(appt: TodayAppt) {
+    try {
+      // Remove transações do caixa de hoje se existirem
+      const apptTxs = getApptTx(appt.id);
+      if (apptTxs.length > 0 && todayClosing) {
+        await supabase
+          .from('cash_register_transactions')
+          .delete()
+          .in('id', apptTxs.map(t => t.id));
+        const { data: rem } = await supabase
+          .from('cash_register_transactions')
+          .select('amount, type')
+          .eq('closing_id', todayClosing.id);
+        const newTotal = (rem || []).reduce(
+          (s: number, t: { amount: number; type: string }) =>
+            t.type === 'reversal' ? s - t.amount : s + t.amount,
+          0
+        );
+        await supabase
+          .from('cash_register_closings')
+          .update({ total_amount: Math.max(0, newTotal) })
+          .eq('id', todayClosing.id);
+      }
+
+      await supabase
+        .from('appointments')
+        .update({ status: 'confirmed', payment_status: 'none', has_payment: false })
+        .eq('id', appt.id);
+
+      setUndoCompleteId(null);
+      showToast('success', 'Conclusão desfeita', 'Atendimento voltou para Confirmado.');
+      loadToday();
+    } catch (err) {
+      showToast('error', 'Erro', parseSupabaseError(err).title);
     }
   }
 
   async function doFinalize(reason?: string) {
+    if (!todayClosing) return;
     setFinalizing(true);
     try {
       const updateData: Record<string, unknown> = {
@@ -530,59 +337,71 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
       const { data: updated, error } = await supabase
         .from('cash_register_closings')
         .update(updateData)
-        .eq('id', currentClosing.id)
+        .eq('id', todayClosing.id)
         .select('id');
 
       if (error) throw error;
-
       if (!updated || updated.length === 0) {
         throw new Error('Permissão negada. Verifique se você tem acesso para finalizar este fechamento.');
       }
 
       setShowFinalizeSheet(false);
-      onUpdate();
-      onClose();
+      showToast('success', 'Caixa fechado!', 'O fechamento do dia foi finalizado.');
+      loadToday();
+      loadHistory();
     } catch (err) {
-      const appErr = parseSupabaseError(err);
-      showToast('error', appErr.title, appErr.description);
+      showToast('error', 'Erro', parseSupabaseError(err).title);
     } finally {
       setFinalizing(false);
     }
   }
 
   async function doReopen(reason: string) {
+    if (!reopeningClosing) return;
     setReopening(true);
+    const closing = reopeningClosing;
     try {
       const notesEntry = `Reaberto em ${new Date().toLocaleString('pt-BR')}: ${reason}`;
-      const newNotes = currentClosing.notes
-        ? `${currentClosing.notes}\n${notesEntry}`
-        : notesEntry;
+      const newNotes = closing.notes ? `${closing.notes}\n${notesEntry}` : notesEntry;
 
       const { data: updated, error } = await supabase
         .from('cash_register_closings')
         .update({ is_finalized: false, finalized_at: null, notes: newNotes })
-        .eq('id', currentClosing.id)
+        .eq('id', closing.id)
         .select('id');
 
       if (error) throw error;
+      if (!updated || updated.length === 0) throw new Error('Permissão negada.');
 
-      if (!updated || updated.length === 0) {
-        throw new Error('Permissão negada. Verifique se você tem acesso para reabrir este fechamento.');
-      }
-
-      setShowReopenSheet(false);
-      loadTransactions();
-      onUpdate();
+      setReopeningClosing(null);
+      // Clear expanded cache so it reloads fresh
+      setExpandedTransactions(prev => {
+        const next = { ...prev };
+        delete next[closing.id];
+        return next;
+      });
+      loadToday();
+      loadHistory();
     } catch (err) {
-      const appErr = parseSupabaseError(err);
-      showToast('error', appErr.title, appErr.description);
+      showToast('error', 'Erro', parseSupabaseError(err).title);
     } finally {
       setReopening(false);
     }
   }
 
-  // Calculate scenario
-  const linkedTransactions = transactions.filter((t) => t.appointment);
+  // Computed for today summary
+  const methodTotals = todayTransactions
+    .filter(t => t.type !== 'reversal')
+    .reduce((acc, t) => {
+      acc[t.payment_method] = (acc[t.payment_method] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const totalReceived = todayClosing?.total_amount ?? 0;
+  const canFinalizeToday = todayClosing && !todayClosing.is_finalized && todayTransactions.length > 0;
+
+  // FinalizeConfirmSheet scenario
+  const linkedTransactions = todayTransactions.filter(t => t.appointment_id && t.appointment);
   const expectedTotal =
     linkedTransactions.length > 0
       ? linkedTransactions.reduce((sum, t) => {
@@ -591,339 +410,498 @@ function TransactionsModal({ closing, onClose, onUpdate }: TransactionsModalProp
           return sum + (price - down);
         }, 0)
       : null;
-  const linkedActual = linkedTransactions.reduce((sum, t) => sum + t.amount, 0);
-
+  const linkedActual = linkedTransactions.reduce((s, t) => s + t.amount, 0);
   const scenario: 'zero' | 'divergent' | 'normal' =
-    currentClosing.total_amount === 0
+    totalReceived === 0
       ? 'zero'
-      : expectedTotal !== null &&
-        expectedTotal > 0 &&
-        Math.abs(linkedActual - expectedTotal) > 0.01
+      : expectedTotal !== null && expectedTotal > 0 && Math.abs(linkedActual - expectedTotal) > 0.01
       ? 'divergent'
       : 'normal';
 
-  return (
-    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      {ToastComponent}
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-3xl w-full p-6 border border-accent/10 my-8">
-        <div className="flex items-start justify-between mb-6">
-          <div>
-            <h2 className="text-xl font-semibold text-text">Fechamento de Caixa</h2>
-            <p className="text-text-muted mt-1">
-              {new Date(closing.closing_date).toLocaleDateString('pt-BR', {
-                weekday: 'long',
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1 hover:bg-champagne-nuvem rounded-lg transition-colors">
-            <X className="w-5 h-5 text-text-muted" />
-          </button>
-        </div>
+  function getApptTx(apptId: string) {
+    return todayTransactions.filter(t => t.appointment_id === apptId && t.type !== 'reversal');
+  }
 
-        <div className="bg-champagne-nuvem rounded-lg p-6 mb-6 border border-accent/10">
+  const todayFormatted = new Date(today + 'T12:00:00').toLocaleDateString('pt-BR', {
+    weekday: 'long', day: '2-digit', month: 'long',
+  });
+
+  return (
+    <div className="space-y-6">
+      {ToastComponent}
+
+      <div>
+        <h1 className="text-2xl font-bold text-text">
+          {isSuperAdmin ? 'Fechamentos de Caixa' : 'Fechar Caixa'}
+        </h1>
+        <p className="text-text-muted mt-1">
+          {isSuperAdmin
+            ? 'Visualize e gerencie os fechamentos de caixa'
+            : 'Gerencie os pagamentos e o fechamento diário'}
+        </p>
+      </div>
+
+      {/* Super admin professional filter */}
+      {isSuperAdmin && (
+        <div className="bg-background-card rounded-xl border border-accent/10 shadow-card p-4">
+          <label className="block text-sm font-medium text-text mb-2">Profissional</label>
+          <select
+            value={selectedProfessional}
+            onChange={e => setSelectedProfessional(e.target.value)}
+            className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+          >
+            <option value="">Todos os profissionais</option>
+            {professionals.map(p => (
+              <option key={p.id} value={p.id}>{p.full_name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* TODAY SECTION */}
+      {(!isSuperAdmin || selectedProfessional) && (
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-text-muted mb-1">Total do Dia</p>
-              <div className="flex items-center gap-2 text-3xl font-bold text-text">
-                <DollarSign className="w-8 h-8" />
-                R$ {currentClosing.total_amount.toFixed(2)}
-              </div>
-            </div>
-            {currentClosing.is_finalized ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 font-medium rounded-lg border border-green-200">
-                  <Check className="w-5 h-5" />
-                  Finalizado
-                </div>
-                <button
-                  onClick={() => setShowReopenSheet(true)}
-                  className="flex items-center gap-2 px-3 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors"
-                  title="Reabrir fechamento"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  Reabrir
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowFinalizeSheet(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors"
-              >
-                <Check className="w-5 h-5" />
-                Finalizar
-              </button>
+            <h2 className="text-lg font-semibold text-text capitalize">{todayFormatted}</h2>
+            {todayClosing?.is_finalized && (
+              <span className="flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-200">
+                <Check className="w-3 h-3" />
+                Fechado
+              </span>
             )}
           </div>
-        </div>
 
-        {!currentClosing.is_finalized && (
-          <div className="mb-6">
-            <button
-              onClick={() => setShowAddTransaction(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent/90 text-white rounded-lg transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Nova Transação
-            </button>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 text-primary animate-spin" />
-          </div>
-        ) : transactions.length === 0 ? (
-          <div className="text-center py-12">
-            <TrendingUp className="w-12 h-12 text-text-muted mx-auto mb-4" />
-            <p className="text-text-muted">Nenhuma transação registrada</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {transactions.map((transaction) => (
-              <div
-                key={transaction.id}
-                className="bg-white rounded-xl p-4 border shadow-card border-accent/10"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-xl font-bold text-text">
-                        R$ {transaction.amount.toFixed(2)}
-                      </span>
-                      <span className="px-3 py-1 bg-background rounded-full text-xs font-medium text-text border border-accent/10">
-                        {transaction.payment_method}
-                      </span>
-                    </div>
-                    {transaction.appointment && (
-                      <p className="text-sm text-text-muted">
-                        {transaction.appointment.patient.full_name} -{' '}
-                        {transaction.appointment.procedure.name}
-                      </p>
-                    )}
-                    {transaction.notes && (
-                      <p className="text-sm text-text-muted mt-1">{transaction.notes}</p>
-                    )}
-                  </div>
-                  {!currentClosing.is_finalized && (
-                    <div className="flex items-center gap-2 ml-2">
-                      {confirmDeleteId === transaction.id ? (
-                        <>
-                          <button
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="py-2 px-4 text-sm text-text border border-accent/15 hover:bg-champagne-nuvem rounded-lg transition-colors"
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={() => deleteTransaction(transaction.id)}
-                            className="py-2 px-4 text-sm text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
-                          >
-                            Excluir
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => setConfirmDeleteId(transaction.id)}
-                          className="p-2 hover:bg-background rounded-lg transition-colors text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+          {loadingToday ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+            </div>
+          ) : (
+            <>
+              {/* Summary card — only if a closing exists */}
+              {todayClosing && (
+                <div className="bg-background-card rounded-xl border border-accent/10 shadow-card p-5">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <p className="text-sm text-text-muted mb-1">Total recebido</p>
+                      <p className="text-3xl font-bold text-text">R$ {totalReceived.toFixed(2)}</p>
+                      {Object.keys(methodTotals).length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {Object.entries(methodTotals).map(([method, amount]) => (
+                            <span
+                              key={method}
+                              className="px-3 py-1 bg-champagne-nuvem rounded-full text-xs font-medium text-text border border-accent/10"
+                            >
+                              {METHOD_LABELS[method] ?? method} R$ {amount.toFixed(2)}
+                            </span>
+                          ))}
+                        </div>
                       )}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      {todayClosing.is_finalized ? (
+                        <button
+                          onClick={() => setReopeningClosing(todayClosing)}
+                          className="flex items-center gap-2 px-3 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors whitespace-nowrap"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          Reabrir
+                        </button>
+                      ) : canFinalizeToday ? (
+                        <button
+                          onClick={() => setShowFinalizeSheet(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+                        >
+                          <Check className="w-4 h-4" />
+                          Fechar o dia
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Today movement list */}
+              {todayAppts.length > 0 ? (
+                <div className="bg-background-card rounded-xl border border-accent/10 shadow-card overflow-hidden">
+                  <div className="px-5 py-4 border-b border-accent/10">
+                    <h3 className="font-semibold text-text">Movimento do Dia</h3>
+                  </div>
+                  <div className="divide-y divide-accent/5">
+                    {todayAppts.map(appt => {
+                      const txs = getApptTx(appt.id);
+                      // isPaid: source of truth é payment_status, não os txs de hoje
+                      const isPaid = appt.payment_status === 'paid';
+                      const needsPayment =
+                        appt.status === 'completed' &&
+                        (!appt.payment_status ||
+                          appt.payment_status === 'none' ||
+                          appt.payment_status === 'partial' ||
+                          appt.payment_status === 'reopened');
+                      const isPending =
+                        appt.status === 'scheduled' || appt.status === 'confirmed';
+                      const isCompleted = appt.status === 'completed';
+                      const isUndoing = undoCompleteId === appt.id;
+
+                      return (
+                        <div key={appt.id} className="flex items-center gap-3 px-5 py-4">
+                          <span className="text-sm font-medium text-text-muted w-11 flex-shrink-0">
+                            {appt.appointment_time.substring(0, 5)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-text truncate">
+                              {appt.patient?.full_name}
+                            </p>
+                            <p className="text-xs text-text-muted truncate">
+                              {appt.procedure?.name}
+                              {appt.procedure?.default_price
+                                ? ` · R$ ${appt.procedure.default_price.toFixed(2)}`
+                                : ''}
+                            </p>
+                          </div>
+
+                          {/* Confirmação inline de desfazer conclusão */}
+                          {isUndoing ? (
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs text-orange-700 whitespace-nowrap">Desfazer?</span>
+                              <button
+                                onClick={() => setUndoCompleteId(null)}
+                                className="py-1.5 px-3 text-xs text-text border border-accent/15 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => handleUndoComplete(appt)}
+                                className="py-1.5 px-3 text-xs text-white bg-orange-600 hover:bg-orange-700 rounded-lg transition-colors"
+                              >
+                                Confirmar
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {isPaid ? (
+                                <>
+                                  <span className="flex items-center gap-1 px-2 py-1 bg-green-50 text-green-700 text-xs font-medium rounded-full border border-green-200">
+                                    <Check className="w-3 h-3" />
+                                    {txs.length > 0
+                                      ? txs
+                                          .map(t => METHOD_LABELS[t.payment_method] ?? t.payment_method)
+                                          .filter((v, i, a) => a.indexOf(v) === i)
+                                          .join(', ')
+                                      : 'Pago'}
+                                  </span>
+                                  {!todayClosing?.is_finalized && txs.length === 1 && (
+                                    <button
+                                      onClick={() => { setSelectedTx(txs[0]); setShowEditTx(true); }}
+                                      className="p-1.5 hover:bg-champagne-nuvem rounded-lg transition-colors text-text-muted"
+                                      title="Editar transação"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              ) : needsPayment ? (
+                                <>
+                                  <span className="flex items-center gap-1 px-2 py-1 bg-red-50 text-red-600 text-xs font-medium rounded-full border border-red-200 whitespace-nowrap">
+                                    Falta pagar
+                                  </span>
+                                  <button
+                                    onClick={() => { setSelectedAppt(appt); setShowPaymentModal(true); }}
+                                    className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
+                                  >
+                                    <DollarSign className="w-3.5 h-3.5" />
+                                    Registrar
+                                  </button>
+                                </>
+                              ) : isPending ? (
+                                <span className="px-2 py-1 bg-amber-50 text-amber-700 text-xs font-medium rounded-full border border-amber-200 whitespace-nowrap">
+                                  A cobrar
+                                </span>
+                              ) : null}
+
+                              {/* Botão desfazer conclusão — disponível para todo atendimento realizado */}
+                              {isCompleted && !todayClosing?.is_finalized && (
+                                <button
+                                  onClick={() => setUndoCompleteId(appt.id)}
+                                  className="p-1.5 hover:bg-champagne-nuvem rounded-lg transition-colors text-orange-500"
+                                  title="Desfazer conclusão"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {!todayClosing?.is_finalized && todayClosing && (
+                    <div className="px-5 py-4 border-t border-accent/10">
+                      <button
+                        onClick={() => setShowAddTx(true)}
+                        className="flex items-center gap-2 text-sm text-accent hover:text-accent/80 font-medium transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Transação manual
+                      </button>
                     </div>
                   )}
                 </div>
-              </div>
-            ))}
+              ) : (
+                <div className="bg-background-card rounded-xl border border-accent/10 shadow-card p-8 text-center">
+                  <Calendar className="w-10 h-10 text-text-muted mx-auto mb-3" />
+                  <p className="text-text-muted">Nenhum atendimento agendado para hoje</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* HISTORY SECTION */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold text-text">Histórico</h2>
+        {loadingHistory ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 text-primary animate-spin" />
           </div>
-        )}
-
-        {showAddTransaction && !currentClosing.is_finalized && (
-          <AddTransactionModal
-            closingId={currentClosing.id}
-            professionalId={currentClosing.professional_id}
-            onClose={() => setShowAddTransaction(false)}
-            onSuccess={() => {
-              setShowAddTransaction(false);
-              loadTransactions();
-              onUpdate();
-            }}
-          />
-        )}
-
-        <FinalizeConfirmSheet
-          isOpen={showFinalizeSheet}
-          scenario={scenario}
-          totalAmount={currentClosing.total_amount}
-          expectedTotal={expectedTotal}
-          linkedActual={linkedActual}
-          onConfirm={doFinalize}
-          onCancel={() => setShowFinalizeSheet(false)}
-          isLoading={finalizing}
-        />
-
-        <ReopenCashRegisterSheet
-          isOpen={showReopenSheet}
-          onConfirm={doReopen}
-          onCancel={() => setShowReopenSheet(false)}
-          isLoading={reopening}
-        />
-      </div>
-    </div>
-  );
-}
-
-interface FinalizeConfirmSheetProps {
-  isOpen: boolean;
-  scenario: 'zero' | 'divergent' | 'normal';
-  totalAmount: number;
-  expectedTotal: number | null;
-  linkedActual: number;
-  onConfirm: (reason?: string) => void;
-  onCancel: () => void;
-  isLoading: boolean;
-}
-
-function FinalizeConfirmSheet({
-  isOpen,
-  scenario,
-  totalAmount,
-  expectedTotal,
-  linkedActual,
-  onConfirm,
-  onCancel,
-  isLoading,
-}: FinalizeConfirmSheetProps) {
-  const [reason, setReason] = useState('');
-  const isMobile = window.innerWidth < 768;
-
-  const canConfirm = scenario !== 'divergent' || reason.trim().length >= 10;
-
-  const content = (
-    <div className="space-y-5">
-      {/* Icon + title */}
-      <div className="flex flex-col items-center text-center gap-3 pt-2">
-        {scenario === 'normal' ? (
-          <CheckCircle2 className="w-12 h-12 text-green-500" />
+        ) : closings.length === 0 ? (
+          <div className="bg-background-card rounded-xl border border-accent/10 shadow-card p-8 text-center">
+            <TrendingUp className="w-10 h-10 text-text-muted mx-auto mb-3" />
+            <p className="text-text-muted">Nenhum fechamento anterior</p>
+          </div>
         ) : (
-          <AlertTriangle className="w-12 h-12 text-orange-500" />
+          <div className="space-y-2">
+            {closings.map(closing => {
+              const isExpanded = expandedClosingId === closing.id;
+              const txList = expandedTransactions[closing.id] || [];
+              const isLoadingTxs = loadingExpanded[closing.id] || false;
+
+              return (
+                <div
+                  key={closing.id}
+                  className="bg-background-card rounded-xl border border-accent/10 shadow-card overflow-hidden"
+                >
+                  {/* Closing header row */}
+                  <button
+                    onClick={() => toggleExpand(closing.id)}
+                    className="w-full flex items-center justify-between px-5 py-4 hover:bg-champagne-nuvem/50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <div>
+                        <p className="font-medium text-text">
+                          {new Date(closing.closing_date + 'T12:00:00').toLocaleDateString('pt-BR', {
+                            weekday: 'short',
+                            day: '2-digit',
+                            month: 'short',
+                          })}
+                        </p>
+                        {isSuperAdmin && closing.professional && (
+                          <p className="text-xs text-text-muted">{closing.professional.full_name}</p>
+                        )}
+                      </div>
+                      <span className="text-lg font-bold text-text">
+                        R$ {closing.total_amount.toFixed(2)}
+                      </span>
+                      {closing.is_finalized ? (
+                        <span className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
+                          <Check className="w-3 h-3" />
+                          Finalizado
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 bg-accent/10 text-accent text-xs font-medium rounded-full border border-accent/10">
+                          Em Aberto
+                        </span>
+                      )}
+                    </div>
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-text-muted flex-shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-text-muted flex-shrink-0" />
+                    )}
+                  </button>
+
+                  {/* Expanded transactions */}
+                  {isExpanded && (
+                    <div className="border-t border-accent/10">
+                      {isLoadingTxs ? (
+                        <div className="flex items-center justify-center py-6">
+                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                        </div>
+                      ) : txList.length === 0 ? (
+                        <div className="px-5 py-4 text-sm text-text-muted">
+                          Nenhuma transação registrada
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-accent/5">
+                          {txList.map(tx => (
+                            <div key={tx.id} className="flex items-center gap-3 px-5 py-3">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-semibold text-text">
+                                    R$ {tx.amount.toFixed(2)}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-champagne-nuvem rounded-full text-xs font-medium text-text border border-accent/10">
+                                    {METHOD_LABELS[tx.payment_method] ?? tx.payment_method}
+                                  </span>
+                                </div>
+                                {tx.appointment && (
+                                  <p className="text-xs text-text-muted mt-0.5">
+                                    {tx.appointment.patient.full_name} ·{' '}
+                                    {tx.appointment.procedure.name}
+                                  </p>
+                                )}
+                                {tx.notes && (
+                                  <p className="text-xs text-text-muted mt-0.5">{tx.notes}</p>
+                                )}
+                              </div>
+                              {!closing.is_finalized && (
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {confirmDeleteId === tx.id ? (
+                                    <>
+                                      <button
+                                        onClick={() => setConfirmDeleteId(null)}
+                                        className="py-1.5 px-3 text-xs text-text border border-accent/15 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                                      >
+                                        Cancelar
+                                      </button>
+                                      <button
+                                        onClick={() => deleteHistoryTransaction(tx.id, closing.id)}
+                                        className="py-1.5 px-3 text-xs text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors"
+                                      >
+                                        Excluir
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => setConfirmDeleteId(tx.id)}
+                                      className="p-1.5 hover:bg-background rounded-lg transition-colors text-red-600"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Actions row for this closing */}
+                      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-accent/10">
+                        {closing.is_finalized ? (
+                          <button
+                            onClick={() => setReopeningClosing(closing)}
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-text-muted hover:bg-champagne-nuvem border border-accent/15 rounded-lg transition-colors"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                            Reabrir
+                          </button>
+                        ) : (
+                          <>
+                            {confirmFinalizeId === closing.id ? (
+                              <>
+                                <button
+                                  onClick={() => setConfirmFinalizeId(null)}
+                                  className="py-2 px-4 text-sm text-text border border-accent/15 hover:bg-champagne-nuvem rounded-lg transition-colors"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={() => finalizeHistoryClosing(closing.id)}
+                                  disabled={finalizingHistoryId === closing.id}
+                                  className="flex items-center gap-2 py-2 px-4 text-sm text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors disabled:opacity-50"
+                                >
+                                  {finalizingHistoryId === closing.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="w-3.5 h-3.5" />
+                                  )}
+                                  Confirmar
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmFinalizeId(closing.id)}
+                                className="flex items-center gap-2 px-3 py-2 text-sm text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors"
+                              >
+                                <Check className="w-4 h-4" />
+                                Finalizar
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
-        <h3 className="text-lg font-semibold text-text">
-          {scenario === 'zero' && 'Nenhum valor registrado'}
-          {scenario === 'divergent' && 'Valor divergente do esperado'}
-          {scenario === 'normal' && 'Confirmar finalização'}
-        </h3>
       </div>
 
-      {/* Scenario-specific content */}
-      {scenario === 'zero' && (
-        <p className="text-sm text-text-muted text-center">
-          Isso é permitido para serviços gratuitos como avaliações.
-        </p>
+      {/* MODALS */}
+
+      {/* Register Payment from today's movement list */}
+      {showPaymentModal && selectedAppt && (
+        <PaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => { setShowPaymentModal(false); setSelectedAppt(null); }}
+          appointmentId={selectedAppt.id}
+          patientId={selectedAppt.patient_id}
+          patientName={selectedAppt.patient?.full_name || ''}
+          procedureName={selectedAppt.procedure?.name || ''}
+          totalAmount={selectedAppt.procedure?.default_price || 0}
+          downpaymentAmount={selectedAppt.downpayment_amount}
+          downpaymentMethod={selectedAppt.downpayment_method}
+          onSuccess={() => { setShowPaymentModal(false); setSelectedAppt(null); loadToday(); }}
+        />
       )}
 
-      {scenario === 'divergent' && expectedTotal !== null && (
-        <>
-          <div className="bg-champagne-nuvem rounded-lg border border-accent/10 divide-y divide-accent/10">
-            <div className="flex justify-between items-center px-4 py-3">
-              <span className="text-sm text-text-muted">Esperado</span>
-              <span className="text-sm font-medium text-text">
-                R$ {expectedTotal.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center px-4 py-3">
-              <span className="text-sm text-text-muted">Registrado</span>
-              <span className="text-sm font-medium text-text">
-                R$ {linkedActual.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between items-center px-4 py-3">
-              <span className="text-sm text-text-muted">Diferença</span>
-              <span
-                className={`text-sm font-semibold ${
-                  linkedActual - expectedTotal < 0 ? 'text-red-600' : 'text-green-600'
-                }`}
-              >
-                {linkedActual - expectedTotal >= 0 ? '+' : ''}R${' '}
-                {(linkedActual - expectedTotal).toFixed(2)}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-text mb-2">
-              Motivo da divergência <span className="text-red-500">*</span>
-            </label>
-            <textarea
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
-              rows={3}
-              placeholder="Descreva o motivo da diferença de valor..."
-              disabled={isLoading}
-            />
-            {reason.trim().length > 0 && reason.trim().length < 10 && (
-              <p className="text-xs text-red-500 mt-1">
-                Mínimo de 10 caracteres ({reason.trim().length}/10)
-              </p>
-            )}
-          </div>
-        </>
+      {/* Edit existing transaction */}
+      {showEditTx && selectedTx && (
+        <EditTransactionSheet
+          isOpen={showEditTx}
+          transaction={selectedTx}
+          onClose={() => { setShowEditTx(false); setSelectedTx(null); }}
+          onSuccess={() => { setShowEditTx(false); setSelectedTx(null); loadToday(); }}
+        />
       )}
 
-      {scenario === 'normal' && (
-        <p className="text-sm text-text-muted text-center">
-          Total: R$ {totalAmount.toFixed(2)}. Esta ação não pode ser desfeita.
-        </p>
+      {/* Manual transaction */}
+      {showAddTx && todayClosing && (
+        <AddTransactionModal
+          closingId={todayClosing.id}
+          professionalId={todayClosing.professional_id}
+          onClose={() => setShowAddTx(false)}
+          onSuccess={() => { setShowAddTx(false); loadToday(); }}
+        />
       )}
 
-      {/* Buttons */}
-      <div className="flex gap-3 pt-1">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={isLoading}
-          className="flex-1 px-4 py-3 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
-        >
-          Cancelar
-        </button>
-        <button
-          type="button"
-          onClick={() => onConfirm(scenario === 'divergent' ? reason.trim() : undefined)}
-          disabled={!canConfirm || isLoading}
-          className="flex-1 px-4 py-3 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : null}
-          {scenario === 'zero' && 'Finalizar mesmo assim'}
-          {scenario === 'divergent' && 'Confirmar com justificativa'}
-          {scenario === 'normal' && 'Finalizar'}
-        </button>
-      </div>
-    </div>
-  );
+      {/* Finalize today */}
+      <FinalizeConfirmSheet
+        isOpen={showFinalizeSheet}
+        scenario={scenario}
+        totalAmount={totalReceived}
+        expectedTotal={expectedTotal}
+        linkedActual={linkedActual}
+        onConfirm={doFinalize}
+        onCancel={() => setShowFinalizeSheet(false)}
+        isLoading={finalizing}
+      />
 
-  if (isMobile) {
-    return (
-      <BottomSheet isOpen={isOpen} title="Finalizar Caixa" onClose={onCancel}>
-        {content}
-      </BottomSheet>
-    );
-  }
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-[70]">
-      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
-        {content}
-      </div>
+      {/* Reopen (today or history) */}
+      <ReopenCashRegisterSheet
+        isOpen={!!reopeningClosing}
+        onConfirm={doReopen}
+        onCancel={() => setReopeningClosing(null)}
+        isLoading={reopening}
+      />
     </div>
   );
 }
+
+// ─── Add Transaction Modal ─────────────────────────────────────────────────
 
 interface AddTransactionModalProps {
   closingId: string;
@@ -932,59 +910,29 @@ interface AddTransactionModalProps {
   onSuccess: () => void;
 }
 
-interface TodayAppointment {
-  id: string;
-  patient: { full_name: string } | null;
-  procedure: { name: string } | null;
-}
-
 function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: AddTransactionModalProps) {
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Dinheiro');
   const [notes, setNotes] = useState('');
-  const [appointmentId, setAppointmentId] = useState('');
-  const [appointments, setAppointments] = useState<TodayAppointment[]>([]);
   const [loading, setLoading] = useState(false);
 
   const { showToast, ToastComponent } = useToast();
 
-  useEffect(() => {
-    loadTodayAppointments();
-  }, [professionalId]);
-
-  async function loadTodayAppointments() {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const { data, error } = await supabase
-        .from('appointments')
-        .select('id, patient:patients(full_name), procedure:procedures(name)')
-        .eq('professional_id', professionalId)
-        .eq('appointment_date', today)
-        .eq('status', 'completed');
-
-      if (error) throw error;
-      setAppointments((data || []) as unknown as TodayAppointment[]);
-    } catch {
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-
     try {
-      const { error: transactionError } = await supabase
+      const { error } = await supabase
         .from('cash_register_transactions')
         .insert({
           closing_id: closingId,
-          appointment_id: appointmentId || null,
+          appointment_id: null,
+          professional_id: professionalId,
           amount: parseFloat(amount),
           payment_method: paymentMethod,
           notes: notes || null,
         });
-
-      if (transactionError) throw transactionError;
-
+      if (error) throw error;
       onSuccess();
     } catch (error) {
       const appErr = parseSupabaseError(error);
@@ -999,7 +947,7 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
       {ToastComponent}
       <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
         <div className="flex items-start justify-between mb-6">
-          <h3 className="text-lg font-semibold text-text">Nova Transação</h3>
+          <h3 className="text-lg font-semibold text-text">Transação Manual</h3>
           <button onClick={onClose} className="p-1 hover:bg-champagne-nuvem rounded-lg transition-colors">
             <X className="w-5 h-5 text-text-muted" />
           </button>
@@ -1012,8 +960,8 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
               type="number"
               step="0.01"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              onChange={e => setAmount(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
               placeholder="0.00"
               required
               disabled={loading}
@@ -1025,8 +973,8 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             <label className="block text-sm font-medium text-text mb-2">Forma de Pagamento</label>
             <select
               value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              onChange={e => setPaymentMethod(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
               disabled={loading}
             >
               <option>Dinheiro</option>
@@ -1037,33 +985,12 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             </select>
           </div>
 
-          {appointments.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-text mb-2">
-                Atendimento (opcional)
-              </label>
-              <select
-                value={appointmentId}
-                onChange={(e) => setAppointmentId(e.target.value)}
-                className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
-                disabled={loading}
-              >
-                <option value="">Não vincular</option>
-                {appointments.map((apt) => (
-                  <option key={apt.id} value={apt.id}>
-                    {apt.patient?.full_name} - {apt.procedure?.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-text mb-2">Observações (opcional)</label>
             <textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text resize-none"
+              onChange={e => setNotes(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text resize-none"
               rows={2}
               disabled={loading}
             />
@@ -1087,6 +1014,148 @@ function AddTransactionModal({ closingId, professionalId, onClose, onSuccess }: 
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Finalize Confirm Sheet ────────────────────────────────────────────────
+
+interface FinalizeConfirmSheetProps {
+  isOpen: boolean;
+  scenario: 'zero' | 'divergent' | 'normal';
+  totalAmount: number;
+  expectedTotal: number | null;
+  linkedActual: number;
+  onConfirm: (reason?: string) => void;
+  onCancel: () => void;
+  isLoading: boolean;
+}
+
+function FinalizeConfirmSheet({
+  isOpen,
+  scenario,
+  totalAmount,
+  expectedTotal,
+  linkedActual,
+  onConfirm,
+  onCancel,
+  isLoading,
+}: FinalizeConfirmSheetProps) {
+  const [reason, setReason] = useState('');
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  const canConfirm = scenario !== 'divergent' || reason.trim().length >= 10;
+
+  const content = (
+    <div className="space-y-5">
+      <div className="flex flex-col items-center text-center gap-3 pt-2">
+        {scenario === 'normal' ? (
+          <CheckCircle2 className="w-12 h-12 text-green-500" />
+        ) : (
+          <AlertTriangle className="w-12 h-12 text-orange-500" />
+        )}
+        <h3 className="text-lg font-semibold text-text">
+          {scenario === 'zero' && 'Nenhum valor registrado'}
+          {scenario === 'divergent' && 'Valor divergente do esperado'}
+          {scenario === 'normal' && 'Confirmar finalização'}
+        </h3>
+      </div>
+
+      {scenario === 'zero' && (
+        <p className="text-sm text-text-muted text-center">
+          Isso é permitido para serviços gratuitos como avaliações.
+        </p>
+      )}
+
+      {scenario === 'divergent' && expectedTotal !== null && (
+        <>
+          <div className="bg-champagne-nuvem rounded-lg border border-accent/10 divide-y divide-accent/10">
+            <div className="flex justify-between items-center px-4 py-3">
+              <span className="text-sm text-text-muted">Esperado</span>
+              <span className="text-sm font-medium text-text">R$ {expectedTotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center px-4 py-3">
+              <span className="text-sm text-text-muted">Registrado</span>
+              <span className="text-sm font-medium text-text">R$ {linkedActual.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between items-center px-4 py-3">
+              <span className="text-sm text-text-muted">Diferença</span>
+              <span
+                className={`text-sm font-semibold ${
+                  linkedActual - expectedTotal < 0 ? 'text-red-600' : 'text-green-600'
+                }`}
+              >
+                {linkedActual - expectedTotal >= 0 ? '+' : ''}R${' '}
+                {(linkedActual - expectedTotal).toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Motivo da divergência <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              className="w-full px-4 py-3 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text resize-none"
+              rows={3}
+              placeholder="Descreva o motivo da diferença de valor..."
+              disabled={isLoading}
+            />
+            {reason.trim().length > 0 && reason.trim().length < 10 && (
+              <p className="text-xs text-red-500 mt-1">
+                Mínimo de 10 caracteres ({reason.trim().length}/10)
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {scenario === 'normal' && (
+        <p className="text-sm text-text-muted text-center">
+          Total: R$ {totalAmount.toFixed(2)}. Esta ação não pode ser desfeita.
+        </p>
+      )}
+
+      <div className="flex gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={isLoading}
+          className="flex-1 px-4 py-3 border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={() => onConfirm(scenario === 'divergent' ? reason.trim() : undefined)}
+          disabled={!canConfirm || isLoading}
+          className="flex-1 px-4 py-3 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {scenario === 'zero' && 'Finalizar mesmo assim'}
+          {scenario === 'divergent' && 'Confirmar com justificativa'}
+          {scenario === 'normal' && 'Finalizar'}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <BottomSheet isOpen={isOpen} title="Fechar o Dia" onClose={onCancel}>
+        {content}
+      </BottomSheet>
+    );
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-[70]">
+      <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-md w-full p-6 border border-accent/10">
+        {content}
       </div>
     </div>
   );
