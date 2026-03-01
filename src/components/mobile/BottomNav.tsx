@@ -1,4 +1,4 @@
-import { Home, Calendar, Users, DollarSign, Receipt } from 'lucide-react';
+import { Home, Calendar, Users, Wallet } from 'lucide-react';
 import { useRouter } from '../../contexts/RouterContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -12,47 +12,32 @@ export default function BottomNav() {
       label: 'Início',
       icon: Home,
       route: '/dashboard',
-      roles: ['user', 'super_admin'],
     },
     {
       id: 'agenda',
       label: 'Agenda',
       icon: Calendar,
       route: isSuperAdmin ? '/agenda-geral' : '/minha-agenda',
-      roles: ['user', 'super_admin'],
     },
     {
       id: 'patients',
       label: 'Clientes',
       icon: Users,
       route: '/pacientes',
-      roles: ['user', 'super_admin'],
     },
     {
-      id: 'expenses',
-      label: 'Despesas',
-      icon: Receipt,
-      route: '/despesas',
-      roles: ['user', 'super_admin'],
-    },
-    {
-      id: 'cash',
-      label: 'Caixa',
-      icon: DollarSign,
-      route: isSuperAdmin ? '/fechamentos' : '/fechar-caixa',
-      roles: ['user', 'super_admin'],
+      id: 'financeiro',
+      label: 'Financeiro',
+      icon: Wallet,
+      route: '/financeiro',
     },
   ];
-
-  const isActive = (route: string) => {
-    return currentRoute === route;
-  };
 
   return (
     <nav className="bottom-nav-bar md:hidden">
       {navItems.map((item) => {
         const Icon = item.icon;
-        const active = isActive(item.route);
+        const active = currentRoute === item.route;
 
         return (
           <button

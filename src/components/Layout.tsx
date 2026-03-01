@@ -8,8 +8,7 @@ import {
   Users,
   Scissors,
   UserCircle,
-  DollarSign,
-  Receipt,
+  Wallet,
   Heart,
   Menu,
   X,
@@ -41,16 +40,14 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Usuários', icon: Users, path: '/usuarios', superAdminOnly: true },
         { label: 'Procedimentos', icon: Scissors, path: '/procedimentos' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
-        { label: 'Fechamentos', icon: DollarSign, path: '/fechamentos', superAdminOnly: true },
-        { label: 'Despesas', icon: Receipt, path: '/despesas' },
+        { label: 'Financeiro', icon: Wallet, path: '/financeiro' },
       ]
     : [
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Minha Agenda', icon: Calendar, path: '/minha-agenda' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
-        { label: 'Fechar Caixa', icon: DollarSign, path: '/fechar-caixa' },
-        { label: 'Despesas', icon: Receipt, path: '/despesas' },
+        { label: 'Financeiro', icon: Wallet, path: '/financeiro' },
       ];
 
   return (

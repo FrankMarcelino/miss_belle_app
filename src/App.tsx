@@ -8,6 +8,7 @@ import Patients from './pages/Patients';
 import Agenda from './pages/Agenda';
 import CashRegister from './pages/CashRegister';
 import Expenses from './pages/Expenses';
+import Financeiro from './pages/Financeiro';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Loader2 } from 'lucide-react';
@@ -66,6 +67,8 @@ function App() {
         return <CashRegister />;
       case '/despesas':
         return <Expenses />;
+      case '/financeiro':
+        return <Financeiro />;
       default:
         return <Dashboard />;
     }
