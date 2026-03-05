@@ -38,6 +38,8 @@ export default function CreateAppointmentForm({
   const [downpaymentMethod, setDownpaymentMethod] = useState<'dinheiro' | 'credito' | 'debito' | 'pix'>('dinheiro');
   const [downpaymentNotes, setDownpaymentNotes] = useState('');
   const [selectedProcedurePrice, setSelectedProcedurePrice] = useState(0);
+  const [finalPrice, setFinalPrice] = useState<string>('');
+  const [selectedProcedure, setSelectedProcedure] = useState<Procedure | null>(null);
 
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [professionals, setProfessionals] = useState<Professional[]>([]);
@@ -53,7 +55,19 @@ export default function CreateAppointmentForm({
   useEffect(() => {
     if (procedureId) {
       const selected = procedures.find((p) => p.id === procedureId);
-      if (selected) setSelectedProcedurePrice(selected.default_price);
+      if (selected) {
+        setSelectedProcedure(selected);
+        if (selected.is_variable_price) {
+          setSelectedProcedurePrice(selected.default_price || selected.min_price || 0);
+          setFinalPrice(selected.default_price ? String(selected.default_price) : '');
+        } else {
+          setSelectedProcedurePrice(selected.default_price);
+          setFinalPrice(String(selected.default_price));
+        }
+      }
+    } else {
+      setSelectedProcedure(null);
+      setFinalPrice('');
     }
   }, [procedureId, procedures]);
 
@@ -67,7 +81,7 @@ export default function CreateAppointmentForm({
     try {
       const { data, error } = await supabase
         .from('professional_procedures')
-        .select('procedure_id, procedures:procedure_id (id, name, duration_minutes, default_price)')
+        .select('procedure_id, procedures:procedure_id (id, name, duration_minutes, default_price, is_variable_price, min_price)')
         .eq('professional_id', profId);
       if (error) throw error;
       const list = data
@@ -125,12 +139,25 @@ export default function CreateAppointmentForm({
       return;
     }
 
+    const effectivePrice = finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice;
+
+    if (selectedProcedure?.is_variable_price) {
+      if (effectivePrice <= 0 && !finalPrice) {
+        showToast('error', 'Valor obrigatório', 'Informe o valor do serviço para procedimentos com preço variável.');
+        return;
+      }
+      if (selectedProcedure.min_price != null && effectivePrice < selectedProcedure.min_price) {
+        showToast('error', 'Valor abaixo do mínimo', `O valor mínimo para este serviço é R$ ${selectedProcedure.min_price.toFixed(2)}.`);
+        return;
+      }
+    }
+
     if (hasDownpayment) {
       if (downpaymentAmount <= 0) {
         showToast('error', 'Calção inválido', 'O valor do calção deve ser maior que zero.');
         return;
       }
-      if (downpaymentAmount >= selectedProcedurePrice) {
+      if (downpaymentAmount >= effectivePrice) {
         showToast('error', 'Calção inválido', 'O calção deve ser menor que o valor total do serviço.');
         return;
       }
@@ -149,6 +176,7 @@ export default function CreateAppointmentForm({
           appointment_date: appointmentDate,
           appointment_time: appointmentTime,
           status: 'scheduled',
+          final_price: effectivePrice > 0 ? effectivePrice : null,
           downpayment_amount: hasDownpayment ? downpaymentAmount : 0,
           downpayment_method: hasDownpayment ? downpaymentMethod : null,
           downpayment_notes: hasDownpayment ? downpaymentNotes : null,
@@ -310,7 +338,37 @@ export default function CreateAppointmentForm({
         </div>
       )}
 
-      {selectedProcedurePrice > 0 && (
+      {/* Variable price input */}
+      {selectedProcedure?.is_variable_price && procedureId && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <label className="block text-sm font-medium text-amber-800 mb-2">
+            Valor do serviço (R$) *
+            {selectedProcedure.min_price != null && selectedProcedure.min_price > 0 && (
+              <span className="font-normal text-amber-600"> — mínimo R$ {selectedProcedure.min_price.toFixed(2)}</span>
+            )}
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              value={finalPrice}
+              onChange={(e) => {
+                setFinalPrice(e.target.value);
+                const val = parseFloat(e.target.value);
+                if (!isNaN(val) && val > 0) setSelectedProcedurePrice(val);
+              }}
+              className="w-full pl-10 pr-4 py-2 bg-background border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
+              placeholder={selectedProcedure.default_price ? selectedProcedure.default_price.toFixed(2) : '0.00'}
+              min={selectedProcedure.min_price ?? 0}
+              required
+              disabled={loading}
+            />
+          </div>
+        </div>
+      )}
+
+      {(selectedProcedurePrice > 0 || (selectedProcedure?.is_variable_price && parseFloat(finalPrice) > 0)) && (
         <div className="border-t border-accent/10 pt-4 mt-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -326,7 +384,7 @@ export default function CreateAppointmentForm({
           {hasDownpayment && (
             <div className="mt-4 space-y-3 bg-green-50 border border-green-200 rounded-lg p-4">
               <p className="text-sm text-green-800 font-medium">
-                Valor total do serviço: R$ {selectedProcedurePrice.toFixed(2)}
+                Valor total do serviço: R$ {(finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice).toFixed(2)}
               </p>
               <div>
                 <label className="block text-sm font-medium text-text mb-2">Valor do calção *</label>
@@ -374,7 +432,7 @@ export default function CreateAppointmentForm({
               </div>
               {downpaymentAmount > 0 && (
                 <p className="text-sm text-green-700">
-                  Restante a pagar: R$ {(selectedProcedurePrice - downpaymentAmount).toFixed(2)}
+                  Restante a pagar: R$ {((finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice) - downpaymentAmount).toFixed(2)}
                 </p>
               )}
             </div>

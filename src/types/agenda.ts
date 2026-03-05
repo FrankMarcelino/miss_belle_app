@@ -16,8 +16,9 @@ export interface Appointment {
   rescheduled_from_date?: string | null;
   rescheduled_from_time?: string | null;
   reschedule_count?: number;
+  final_price?: number | null;
   patient?: { full_name: string; phone?: string };
-  procedure?: { name: string; duration_minutes: number; default_price?: number };
+  procedure?: { name: string; duration_minutes: number; default_price?: number; is_variable_price?: boolean; min_price?: number | null };
   professional?: { full_name: string };
 }
 
@@ -26,6 +27,8 @@ export interface Procedure {
   name: string;
   duration_minutes: number;
   default_price: number;
+  is_variable_price?: boolean;
+  min_price?: number | null;
 }
 
 export interface Professional {

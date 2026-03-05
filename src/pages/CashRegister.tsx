@@ -34,6 +34,7 @@ interface Transaction {
   notes: string | null;
   created_at: string;
   appointment?: {
+    final_price: number | null;
     downpayment_amount: number;
     patient: { full_name: string };
     procedure: { name: string; default_price: number };
@@ -47,6 +48,7 @@ interface TodayAppt {
   payment_status: string | null;
   downpayment_amount: number;
   downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
+  final_price: number | null;
   patient_id: string;
   patient: { full_name: string } | null;
   procedure: { name: string; default_price: number } | null;
@@ -131,7 +133,7 @@ export default function CashRegister() {
         .from('appointments')
         .select(`
           id, appointment_time, status, payment_status,
-          downpayment_amount, downpayment_method, patient_id,
+          downpayment_amount, downpayment_method, patient_id, final_price,
           patient:patients(full_name),
           procedure:procedures(name, default_price)
         `)
@@ -161,7 +163,7 @@ export default function CashRegister() {
           .select(`
             *,
             appointment:appointments(
-              downpayment_amount,
+              final_price, downpayment_amount,
               patient:patients(full_name),
               procedure:procedures(name, default_price)
             )
@@ -208,7 +210,7 @@ export default function CashRegister() {
         .select(`
           *,
           appointment:appointments(
-            downpayment_amount,
+            final_price, downpayment_amount,
             patient:patients(full_name),
             procedure:procedures(name, default_price)
           )
@@ -405,7 +407,7 @@ export default function CashRegister() {
   const expectedTotal =
     linkedTransactions.length > 0
       ? linkedTransactions.reduce((sum, t) => {
-          const price = t.appointment?.procedure.default_price ?? 0;
+          const price = t.appointment?.final_price ?? t.appointment?.procedure.default_price ?? 0;
           const down = t.appointment?.downpayment_amount ?? 0;
           return sum + (price - down);
         }, 0)
@@ -553,9 +555,10 @@ export default function CashRegister() {
                             </p>
                             <p className="text-xs text-text-muted truncate">
                               {appt.procedure?.name}
-                              {appt.procedure?.default_price
-                                ? ` · R$ ${appt.procedure.default_price.toFixed(2)}`
-                                : ''}
+                              {(() => {
+                                const price = appt.final_price ?? appt.procedure?.default_price;
+                                return price ? ` · R$ ${price.toFixed(2)}` : '';
+                              })()}
                             </p>
                           </div>
 
@@ -851,7 +854,7 @@ export default function CashRegister() {
           patientId={selectedAppt.patient_id}
           patientName={selectedAppt.patient?.full_name || ''}
           procedureName={selectedAppt.procedure?.name || ''}
-          totalAmount={selectedAppt.procedure?.default_price || 0}
+          totalAmount={selectedAppt.final_price ?? selectedAppt.procedure?.default_price ?? 0}
           downpaymentAmount={selectedAppt.downpayment_amount}
           downpaymentMethod={selectedAppt.downpayment_method}
           onSuccess={() => { setShowPaymentModal(false); setSelectedAppt(null); loadToday(); }}

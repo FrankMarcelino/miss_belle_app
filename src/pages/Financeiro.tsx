@@ -16,6 +16,7 @@ interface PendingAppointment {
   appointment_time: string;
   patient_id: string;
   professional_id: string;
+  final_price: number | null;
   patient: { full_name: string; phone?: string } | null;
   procedure: { name: string; default_price: number } | null;
   status: string;
@@ -89,7 +90,7 @@ export default function Financeiro() {
         .from('appointments')
         .select(`
           id, appointment_date, appointment_time, patient_id, professional_id,
-          status, payment_status, downpayment_amount, downpayment_method,
+          status, payment_status, downpayment_amount, downpayment_method, final_price,
           patient:patients(full_name, phone),
           procedure:procedures(name, default_price)
         `)
@@ -284,7 +285,7 @@ export default function Financeiro() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="font-bold text-text text-lg">
-                          R$ {(apt.procedure?.default_price ?? 0).toFixed(2)}
+                          R$ {(apt.final_price ?? apt.procedure?.default_price ?? 0).toFixed(2)}
                         </p>
                         {apt.downpayment_amount > 0 && (
                           <p className="text-xs text-green-600">
@@ -463,7 +464,7 @@ export default function Financeiro() {
           patientId={selectedApt.patient_id}
           patientName={selectedApt.patient?.full_name ?? ''}
           procedureName={selectedApt.procedure?.name ?? ''}
-          totalAmount={selectedApt.procedure?.default_price ?? 0}
+          totalAmount={selectedApt.final_price ?? selectedApt.procedure?.default_price ?? 0}
           downpaymentAmount={selectedApt.downpayment_amount}
           onSuccess={() => {
             setShowPaymentModal(false);

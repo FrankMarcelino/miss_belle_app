@@ -66,6 +66,7 @@ interface DelinquentAppointment {
   id: string;
   appointment_date: string;
   appointment_time: string;
+  final_price: number | null;
   patient: { full_name: string; phone: string };
   procedure: { name: string; default_price: number };
   professional?: { full_name: string };
@@ -479,7 +480,7 @@ export default function Dashboard() {
 
       let query = supabase
         .from('appointments')
-        .select('status, payment_status, appointment_date, procedure:procedures(default_price)')
+        .select('status, payment_status, appointment_date, final_price, procedure:procedures(default_price)')
         .gte('appointment_date', start)
         .lte('appointment_date', end);
 
@@ -494,7 +495,8 @@ export default function Dashboard() {
       const appts = (raw || []).filter((a) => a.payment_status !== 'legacy');
 
       // Supabase pode retornar o join como objeto ou array — tratar os dois casos
-      const price = (apt: { procedure: unknown }) => {
+      const price = (apt: { final_price?: number | null; procedure: unknown }) => {
+        if (apt.final_price != null) return apt.final_price;
         const proc = apt.procedure;
         if (!proc) return 0;
         if (Array.isArray(proc)) return (proc[0] as { default_price?: number })?.default_price ?? 0;
@@ -551,7 +553,7 @@ export default function Dashboard() {
       let query = supabase
         .from('appointments')
         .select(`
-          id, appointment_date, appointment_time,
+          id, appointment_date, appointment_time, final_price,
           patient:patients(full_name, phone),
           procedure:procedures(name, default_price),
           professional:profiles!professional_id(full_name)
@@ -996,7 +998,7 @@ export default function Dashboard() {
                 <div className="space-y-3">
                   {delinquentList.map((apt) => {
                     const dateStr = new Date(apt.appointment_date + 'T12:00:00').toLocaleDateString('pt-BR');
-                    const price = apt.procedure?.default_price ?? 0;
+                    const price = apt.final_price ?? apt.procedure?.default_price ?? 0;
                     return (
                       <div key={apt.id} className="bg-champagne-nuvem rounded-lg p-3 border border-accent/10">
                         <div className="flex items-start justify-between gap-2">

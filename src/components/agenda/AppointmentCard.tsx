@@ -16,7 +16,8 @@ interface AppointmentCardProps {
 export default function AppointmentCard({ appointment, onRefresh, showToast, isNext }: AppointmentCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const pc = getPaymentBadge(appointment.payment_status, appointment.status, appointment.procedure?.default_price);
+  const effectivePrice = appointment.final_price ?? appointment.procedure?.default_price ?? 0;
+  const pc = getPaymentBadge(appointment.payment_status, appointment.status, effectivePrice);
 
   const needsPayment =
     appointment.status === 'completed' &&
@@ -97,7 +98,7 @@ export default function AppointmentCard({ appointment, onRefresh, showToast, isN
           patientId={appointment.patient_id}
           patientName={appointment.patient?.full_name || ''}
           procedureName={appointment.procedure?.name || ''}
-          totalAmount={appointment.procedure?.default_price || 0}
+          totalAmount={effectivePrice}
           downpaymentAmount={appointment.downpayment_amount}
           downpaymentMethod={appointment.downpayment_method}
           onSuccess={() => { setShowPaymentModal(false); onRefresh(); }}

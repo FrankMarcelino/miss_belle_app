@@ -48,6 +48,8 @@ export type Database = {
           name: string;
           duration_minutes: number;
           default_price: number;
+          is_variable_price: boolean;
+          min_price: number | null;
           is_active: boolean;
           created_by: string | null;
           created_at: string;
@@ -58,6 +60,8 @@ export type Database = {
           name: string;
           duration_minutes: number;
           default_price: number;
+          is_variable_price?: boolean;
+          min_price?: number | null;
           is_active?: boolean;
           created_by?: string | null;
           created_at?: string;
@@ -68,6 +72,8 @@ export type Database = {
           name?: string;
           duration_minutes?: number;
           default_price?: number;
+          is_variable_price?: boolean;
+          min_price?: number | null;
           is_active?: boolean;
           created_by?: string | null;
           created_at?: string;
@@ -120,6 +126,7 @@ export type Database = {
           downpayment_method: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
           downpayment_notes: string | null;
           has_payment: boolean;
+          final_price: number | null;
           created_by: string | null;
           created_at: string;
           updated_at: string;
@@ -137,6 +144,7 @@ export type Database = {
           downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
           downpayment_notes?: string | null;
           has_payment?: boolean;
+          final_price?: number | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -154,6 +162,7 @@ export type Database = {
           downpayment_method?: 'dinheiro' | 'credito' | 'debito' | 'pix' | null;
           downpayment_notes?: string | null;
           has_payment?: boolean;
+          final_price?: number | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -254,6 +263,7 @@ export interface AppointmentWithPayment {
   downpayment_method: PaymentMethod | null;
   downpayment_notes: string | null;
   has_payment: boolean;
+  final_price: number | null;
   patient?: { full_name: string };
   procedure?: { name: string; duration_minutes: number; default_price: number };
   professional?: { full_name: string };

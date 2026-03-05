@@ -11,7 +11,7 @@ import ReopenCashRegisterSheet from '../ReopenCashRegisterSheet';
 import ReversalModal from '../ReversalModal';
 import {
   MessageCircle, CalendarClock, DollarSign, AlertTriangle, RotateCcw,
-  CheckCircle2, Circle, Loader2,
+  CheckCircle2, Circle, Loader2, Trash2,
 } from 'lucide-react';
 
 interface AppointmentDetailsSheetProps {
@@ -95,6 +95,9 @@ export default function AppointmentDetailsSheet({
   const [reopeningPayment, setReopeningPayment] = useState(false);
   const [showReversalModal, setShowReversalModal] = useState(false);
   const [showUndoComplete, setShowUndoComplete] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deleting, setDeleting] = useState(false);
   // Local effective status — updates immediately after DB change so UI reflects correct state
   // without waiting for parent to re-fetch and pass a new appointment prop.
   const [effectiveStatus, setEffectiveStatus] = useState<Appointment['status']>(appointment.status);
@@ -359,6 +362,81 @@ export default function AppointmentDetailsSheet({
     }
   }
 
+  async function handleDelete() {
+    if (!deleteReason.trim() || deleteReason.trim().length < 5) {
+      showToast('error', 'Motivo obrigatório', 'Informe o motivo da exclusão (mínimo 5 caracteres).');
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const apptId = appointment.id;
+
+      // 1. Nullify patient_credit_uses.appointment_id references
+      const { error: creditUsesErr } = await supabase
+        .from('patient_credit_uses')
+        .update({ appointment_id: null })
+        .eq('appointment_id', apptId);
+      if (creditUsesErr) throw creditUsesErr;
+
+      // 2. Nullify patient_credits.origin_appointment_id references
+      const { error: creditsErr } = await supabase
+        .from('patient_credits')
+        .update({ origin_appointment_id: null })
+        .eq('origin_appointment_id', apptId);
+      if (creditsErr) throw creditsErr;
+
+      // 3. Remove cash_register_transactions and recalculate affected closings
+      const { data: txs } = await supabase
+        .from('cash_register_transactions')
+        .select('id, closing_id, amount, type')
+        .eq('appointment_id', apptId);
+
+      if (txs && txs.length > 0) {
+        const closingIds = [...new Set(txs.map((t: { closing_id: string }) => t.closing_id))];
+
+        const { error: txDelErr } = await supabase
+          .from('cash_register_transactions')
+          .delete()
+          .eq('appointment_id', apptId);
+        if (txDelErr) throw txDelErr;
+
+        for (const cid of closingIds) {
+          const { data: rem } = await supabase
+            .from('cash_register_transactions')
+            .select('amount, type')
+            .eq('closing_id', cid);
+          const newTotal = (rem || []).reduce(
+            (s: number, t: { amount: number; type: string }) =>
+              t.type === 'reversal' ? s - t.amount : s + t.amount,
+            0
+          );
+          await supabase
+            .from('cash_register_closings')
+            .update({ total_amount: Math.max(0, newTotal) })
+            .eq('id', cid);
+        }
+      }
+
+      // 4. Delete the appointment
+      const { error: deleteErr } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', apptId);
+      if (deleteErr) throw deleteErr;
+
+      setShowDeleteConfirm(false);
+      showToast('success', 'Agendamento excluído', `Motivo: ${deleteReason.trim()}`);
+      onRefresh();
+      onClose();
+    } catch (err) {
+      const appError = parseSupabaseError(err);
+      showToast('error', 'Erro ao excluir', appError.description || appError.title);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   if (showEditForm) {
     return (
       <EditAppointmentForm
@@ -371,7 +449,8 @@ export default function AppointmentDetailsSheet({
   }
 
   const primaryAction = getPrimaryAction();
-  const pc = getPaymentBadge(ps, effectiveStatus, appointment.procedure?.default_price);
+  const effectivePrice = appointment.final_price ?? appointment.procedure?.default_price ?? 0;
+  const pc = getPaymentBadge(ps, effectiveStatus, effectivePrice);
   const isCancelled = effectiveStatus === 'cancelled';
   const isCompleted = effectiveStatus === 'completed';
   const canShowPaymentActions = ps === 'paid' || ps === 'partial';
@@ -386,9 +465,9 @@ export default function AppointmentDetailsSheet({
         <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${pc.bg} ${pc.color}`}>
           <pc.Icon className="w-4 h-4 flex-shrink-0" />
           <span className="font-medium">{pc.label}</span>
-          {appointment.procedure?.default_price && appointment.procedure.default_price > 0 && (
+          {effectivePrice > 0 && (
             <span className="ml-auto font-bold">
-              R$ {appointment.procedure.default_price.toFixed(2)}
+              R$ {effectivePrice.toFixed(2)}
             </span>
           )}
         </div>
@@ -481,6 +560,67 @@ export default function AppointmentDetailsSheet({
           </div>
         )}
       </div>
+
+      {/* Delete option for cancelled appointments */}
+      {isCancelled && (
+        <div className="pt-4 border-t border-accent/10 space-y-3">
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={deleting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-red-300 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir agendamento
+            </button>
+          ) : (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-800 font-semibold">Excluir agendamento permanentemente?</p>
+              </div>
+              <p className="text-xs text-red-700">
+                Esta ação é irreversível. O agendamento e todas as transações financeiras vinculadas serão removidos.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-red-800 mb-1">
+                  Motivo da exclusão <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-text resize-none text-sm"
+                  rows={2}
+                  placeholder="Informe o motivo da exclusão..."
+                  disabled={deleting}
+                />
+                {deleteReason.trim().length > 0 && deleteReason.trim().length < 5 && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Mínimo de 5 caracteres ({deleteReason.trim().length}/5)
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteReason(''); }}
+                  disabled={deleting}
+                  className="flex-1 px-3 py-2 text-sm border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting || deleteReason.trim().length < 5}
+                  className="flex-1 px-3 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  {deleting ? 'Excluindo...' : 'Excluir definitivamente'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Simple cancel form */}
       {showSimpleCancel && (
@@ -614,6 +754,65 @@ export default function AppointmentDetailsSheet({
               </div>
             </div>
           )}
+
+          {/* Excluir agendamento */}
+          {!showDeleteConfirm && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={updating || deleting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-red-300 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Excluir agendamento
+            </button>
+          )}
+
+          {showDeleteConfirm && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-red-600 flex-shrink-0" />
+                <p className="text-sm text-red-800 font-semibold">Excluir agendamento permanentemente?</p>
+              </div>
+              <p className="text-xs text-red-700">
+                Esta ação é irreversível. O agendamento e todas as transações financeiras vinculadas serão removidos.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-red-800 mb-1">
+                  Motivo da exclusão <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400 text-text resize-none text-sm"
+                  rows={2}
+                  placeholder="Informe o motivo da exclusão..."
+                  disabled={deleting}
+                />
+                {deleteReason.trim().length > 0 && deleteReason.trim().length < 5 && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Mínimo de 5 caracteres ({deleteReason.trim().length}/5)
+                  </p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowDeleteConfirm(false); setDeleteReason(''); }}
+                  disabled={deleting}
+                  className="flex-1 px-3 py-2 text-sm border border-accent/15 text-text hover:bg-champagne-nuvem rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting || deleteReason.trim().length < 5}
+                  className="flex-1 px-3 py-2 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  {deleting ? 'Excluindo...' : 'Excluir definitivamente'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -626,7 +825,7 @@ export default function AppointmentDetailsSheet({
           patientId={appointment.patient_id}
           patientName={appointment.patient?.full_name || ''}
           procedureName={appointment.procedure?.name || ''}
-          totalAmount={appointment.procedure?.default_price || 0}
+          totalAmount={effectivePrice}
           downpaymentAmount={appointment.downpayment_amount}
           downpaymentMethod={appointment.downpayment_method}
           onSuccess={() => { setShowPaymentModal(false); onRefresh(); onClose(); }}

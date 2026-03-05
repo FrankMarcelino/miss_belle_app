@@ -40,7 +40,7 @@ export function useAppointments({
         .select(`
           *,
           patient:patients(full_name, phone),
-          procedure:procedures(name, duration_minutes, default_price),
+          procedure:procedures(name, duration_minutes, default_price, is_variable_price, min_price),
           professional:profiles!professional_id(full_name)
         `)
         .order('appointment_time');
