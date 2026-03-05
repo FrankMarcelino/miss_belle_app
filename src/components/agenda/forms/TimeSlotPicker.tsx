@@ -40,7 +40,7 @@ export default function TimeSlotPicker({
         .select('id, appointment_time, patient:patients(full_name), procedure:procedures(duration_minutes)')
         .eq('professional_id', professionalId)
         .eq('appointment_date', date)
-        .in('status', ['scheduled', 'confirmed'])
+        .neq('status', 'cancelled')
         .order('appointment_time');
 
       if (excludeAppointmentId) {

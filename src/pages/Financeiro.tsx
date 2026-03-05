@@ -18,7 +18,7 @@ interface PendingAppointment {
   professional_id: string;
   final_price: number | null;
   patient: { full_name: string; phone?: string } | null;
-  procedure: { name: string; default_price: number } | null;
+  procedure: { name: string; default_price: number; is_variable_price?: boolean; min_price?: number | null } | null;
   status: string;
   payment_status: string | null;
   downpayment_amount: number;
@@ -92,7 +92,7 @@ export default function Financeiro() {
           id, appointment_date, appointment_time, patient_id, professional_id,
           status, payment_status, downpayment_amount, downpayment_method, final_price,
           patient:patients(full_name, phone),
-          procedure:procedures(name, default_price)
+          procedure:procedures(name, default_price, is_variable_price, min_price)
         `)
         .or(`and(status.eq.completed,payment_status.eq.none),and(status.eq.completed,payment_status.is.null),and(status.in.(scheduled,confirmed),appointment_date.lt.${today})`)
         .order('appointment_date', { ascending: false });
@@ -464,8 +464,14 @@ export default function Financeiro() {
           patientId={selectedApt.patient_id}
           patientName={selectedApt.patient?.full_name ?? ''}
           procedureName={selectedApt.procedure?.name ?? ''}
-          totalAmount={selectedApt.final_price ?? selectedApt.procedure?.default_price ?? 0}
+          totalAmount={
+            (selectedApt.procedure?.is_variable_price && selectedApt.final_price == null)
+              ? 0
+              : (selectedApt.final_price ?? selectedApt.procedure?.default_price ?? 0)
+          }
           downpaymentAmount={selectedApt.downpayment_amount}
+          isVariablePrice={selectedApt.procedure?.is_variable_price ?? false}
+          minPrice={selectedApt.procedure?.min_price}
           onSuccess={() => {
             setShowPaymentModal(false);
             setSelectedApt(null);

@@ -26,9 +26,7 @@ export default function EditAppointmentForm({
   const [professionalId, setProfessionalId] = useState(appointment.professional_id);
   const [appointmentDate, setAppointmentDate] = useState(appointment.appointment_date);
   const [appointmentTime, setAppointmentTime] = useState(appointment.appointment_time.substring(0, 5));
-  const [finalPrice, setFinalPrice] = useState<string>(
-    appointment.final_price != null ? String(appointment.final_price) : ''
-  );
+  const finalPrice = appointment.final_price != null ? String(appointment.final_price) : '';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
@@ -112,25 +110,12 @@ export default function EditAppointmentForm({
       return;
     }
 
-    const currentProc = procedures.find((p) => p.id === procedureId);
     const effectivePrice = finalPrice ? parseFloat(finalPrice) : null;
-
-    if (currentProc?.is_variable_price) {
-      if (!effectivePrice || effectivePrice <= 0) {
-        showToast('error', 'Valor obrigatório', 'Informe o valor do serviço para procedimentos com preço variável.');
-        return;
-      }
-      if (currentProc.min_price != null && effectivePrice < currentProc.min_price) {
-        showToast('error', 'Valor abaixo do mínimo', `O valor mínimo é R$ ${currentProc.min_price.toFixed(2)}.`);
-        return;
-      }
-    }
 
     setError('');
     setLoading(true);
 
     try {
-      // Detect if date/time changed → save reschedule history
       const dateChanged = appointmentDate !== appointment.appointment_date;
       const timeChanged = appointmentTime !== appointment.appointment_time.substring(0, 5);
       const isReschedule = dateChanged || timeChanged;
@@ -268,32 +253,24 @@ export default function EditAppointmentForm({
         </div>
       )}
 
-      {/* Variable price input */}
+      {/* Variable price info */}
       {(() => {
         const currentProc = procedures.find((p) => p.id === procedureId);
         if (!currentProc?.is_variable_price) return null;
         return (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <label className="block text-sm font-medium text-amber-800 mb-2">
-              Valor do serviço (R$) *
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-sm text-amber-800 font-medium">Serviço com valor variável</p>
+            <p className="text-xs text-amber-600 mt-1">
+              O valor será definido na hora do pagamento, após o atendimento.
               {currentProc.min_price != null && currentProc.min_price > 0 && (
-                <span className="font-normal text-amber-600"> — mínimo R$ {currentProc.min_price.toFixed(2)}</span>
+                <> Mínimo: R$ {currentProc.min_price.toFixed(2)}</>
               )}
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">R$</span>
-              <input
-                type="number"
-                step="0.01"
-                value={finalPrice}
-                onChange={(e) => setFinalPrice(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-background border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
-                placeholder={currentProc.default_price ? currentProc.default_price.toFixed(2) : '0.00'}
-                min={currentProc.min_price ?? 0}
-                required
-                disabled={loading}
-              />
-            </div>
+            </p>
+            {appointment.final_price != null && (
+              <p className="text-xs text-amber-800 mt-1 font-medium">
+                Valor atual definido: R$ {appointment.final_price.toFixed(2)}
+              </p>
+            )}
           </div>
         );
       })()}

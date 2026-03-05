@@ -449,7 +449,9 @@ export default function AppointmentDetailsSheet({
   }
 
   const primaryAction = getPrimaryAction();
+  const isVariableProc = appointment.procedure?.is_variable_price ?? false;
   const effectivePrice = appointment.final_price ?? appointment.procedure?.default_price ?? 0;
+  const paymentAmount = isVariableProc && appointment.final_price == null ? 0 : effectivePrice;
   const pc = getPaymentBadge(ps, effectiveStatus, effectivePrice);
   const isCancelled = effectiveStatus === 'cancelled';
   const isCompleted = effectiveStatus === 'completed';
@@ -825,9 +827,11 @@ export default function AppointmentDetailsSheet({
           patientId={appointment.patient_id}
           patientName={appointment.patient?.full_name || ''}
           procedureName={appointment.procedure?.name || ''}
-          totalAmount={effectivePrice}
+          totalAmount={paymentAmount}
           downpaymentAmount={appointment.downpayment_amount}
           downpaymentMethod={appointment.downpayment_method}
+          isVariablePrice={isVariableProc}
+          minPrice={appointment.procedure?.min_price}
           onSuccess={() => { setShowPaymentModal(false); onRefresh(); onClose(); }}
         />
       )}

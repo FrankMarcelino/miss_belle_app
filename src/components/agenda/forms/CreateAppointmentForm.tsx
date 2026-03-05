@@ -38,7 +38,6 @@ export default function CreateAppointmentForm({
   const [downpaymentMethod, setDownpaymentMethod] = useState<'dinheiro' | 'credito' | 'debito' | 'pix'>('dinheiro');
   const [downpaymentNotes, setDownpaymentNotes] = useState('');
   const [selectedProcedurePrice, setSelectedProcedurePrice] = useState(0);
-  const [finalPrice, setFinalPrice] = useState<string>('');
   const [selectedProcedure, setSelectedProcedure] = useState<Procedure | null>(null);
 
   const [procedures, setProcedures] = useState<Procedure[]>([]);
@@ -57,17 +56,10 @@ export default function CreateAppointmentForm({
       const selected = procedures.find((p) => p.id === procedureId);
       if (selected) {
         setSelectedProcedure(selected);
-        if (selected.is_variable_price) {
-          setSelectedProcedurePrice(selected.default_price || selected.min_price || 0);
-          setFinalPrice(selected.default_price ? String(selected.default_price) : '');
-        } else {
-          setSelectedProcedurePrice(selected.default_price);
-          setFinalPrice(String(selected.default_price));
-        }
+        setSelectedProcedurePrice(selected.is_variable_price ? 0 : selected.default_price);
       }
     } else {
       setSelectedProcedure(null);
-      setFinalPrice('');
     }
   }, [procedureId, procedures]);
 
@@ -139,25 +131,16 @@ export default function CreateAppointmentForm({
       return;
     }
 
-    const effectivePrice = finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice;
-
-    if (selectedProcedure?.is_variable_price) {
-      if (effectivePrice <= 0 && !finalPrice) {
-        showToast('error', 'Valor obrigatório', 'Informe o valor do serviço para procedimentos com preço variável.');
-        return;
-      }
-      if (selectedProcedure.min_price != null && effectivePrice < selectedProcedure.min_price) {
-        showToast('error', 'Valor abaixo do mínimo', `O valor mínimo para este serviço é R$ ${selectedProcedure.min_price.toFixed(2)}.`);
-        return;
-      }
-    }
+    const effectivePrice = selectedProcedure?.is_variable_price
+      ? null
+      : selectedProcedurePrice;
 
     if (hasDownpayment) {
       if (downpaymentAmount <= 0) {
         showToast('error', 'Calção inválido', 'O valor do calção deve ser maior que zero.');
         return;
       }
-      if (downpaymentAmount >= effectivePrice) {
+      if (effectivePrice != null && downpaymentAmount >= effectivePrice) {
         showToast('error', 'Calção inválido', 'O calção deve ser menor que o valor total do serviço.');
         return;
       }
@@ -176,7 +159,7 @@ export default function CreateAppointmentForm({
           appointment_date: appointmentDate,
           appointment_time: appointmentTime,
           status: 'scheduled',
-          final_price: effectivePrice > 0 ? effectivePrice : null,
+          final_price: effectivePrice,
           downpayment_amount: hasDownpayment ? downpaymentAmount : 0,
           downpayment_method: hasDownpayment ? downpaymentMethod : null,
           downpayment_notes: hasDownpayment ? downpaymentNotes : null,
@@ -338,37 +321,20 @@ export default function CreateAppointmentForm({
         </div>
       )}
 
-      {/* Variable price input */}
+      {/* Info for variable price */}
       {selectedProcedure?.is_variable_price && procedureId && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-          <label className="block text-sm font-medium text-amber-800 mb-2">
-            Valor do serviço (R$) *
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-sm text-amber-800 font-medium">Serviço com valor variável</p>
+          <p className="text-xs text-amber-600 mt-1">
+            O valor será definido na hora do pagamento, após o atendimento.
             {selectedProcedure.min_price != null && selectedProcedure.min_price > 0 && (
-              <span className="font-normal text-amber-600"> — mínimo R$ {selectedProcedure.min_price.toFixed(2)}</span>
+              <> Mínimo: R$ {selectedProcedure.min_price.toFixed(2)}</>
             )}
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">R$</span>
-            <input
-              type="number"
-              step="0.01"
-              value={finalPrice}
-              onChange={(e) => {
-                setFinalPrice(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val) && val > 0) setSelectedProcedurePrice(val);
-              }}
-              className="w-full pl-10 pr-4 py-2 bg-background border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text"
-              placeholder={selectedProcedure.default_price ? selectedProcedure.default_price.toFixed(2) : '0.00'}
-              min={selectedProcedure.min_price ?? 0}
-              required
-              disabled={loading}
-            />
-          </div>
+          </p>
         </div>
       )}
 
-      {(selectedProcedurePrice > 0 || (selectedProcedure?.is_variable_price && parseFloat(finalPrice) > 0)) && (
+      {(selectedProcedurePrice > 0 || selectedProcedure?.is_variable_price) && procedureId && (
         <div className="border-t border-accent/10 pt-4 mt-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -383,9 +349,11 @@ export default function CreateAppointmentForm({
 
           {hasDownpayment && (
             <div className="mt-4 space-y-3 bg-green-50 border border-green-200 rounded-lg p-4">
-              <p className="text-sm text-green-800 font-medium">
-                Valor total do serviço: R$ {(finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice).toFixed(2)}
-              </p>
+              {selectedProcedurePrice > 0 && (
+                <p className="text-sm text-green-800 font-medium">
+                  Valor total do serviço: R$ {selectedProcedurePrice.toFixed(2)}
+                </p>
+              )}
               <div>
                 <label className="block text-sm font-medium text-text mb-2">Valor do calção *</label>
                 <div className="relative">
@@ -430,9 +398,9 @@ export default function CreateAppointmentForm({
                   disabled={loading}
                 />
               </div>
-              {downpaymentAmount > 0 && (
+              {downpaymentAmount > 0 && selectedProcedurePrice > 0 && (
                 <p className="text-sm text-green-700">
-                  Restante a pagar: R$ {((finalPrice ? parseFloat(finalPrice) : selectedProcedurePrice) - downpaymentAmount).toFixed(2)}
+                  Restante a pagar: R$ {(selectedProcedurePrice - downpaymentAmount).toFixed(2)}
                 </p>
               )}
             </div>

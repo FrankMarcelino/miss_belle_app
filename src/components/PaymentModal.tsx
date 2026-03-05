@@ -26,6 +26,8 @@ interface PaymentModalProps {
   totalAmount: number;
   downpaymentAmount?: number;
   downpaymentMethod?: PaymentMethod | null;
+  isVariablePrice?: boolean;
+  minPrice?: number | null;
   onSuccess: () => void;
 }
 
@@ -48,12 +50,22 @@ export default function PaymentModal({
   patientId,
   patientName,
   procedureName,
-  totalAmount,
+  totalAmount: initialTotalAmount,
   downpaymentAmount = 0,
   downpaymentMethod,
+  isVariablePrice = false,
+  minPrice,
   onSuccess,
 }: PaymentModalProps) {
   const { showToast } = useToast();
+  const needsPriceInput = isVariablePrice && (!initialTotalAmount || initialTotalAmount <= 0);
+  const [variablePrice, setVariablePrice] = useState<string>('');
+  const [priceConfirmed, setPriceConfirmed] = useState(!needsPriceInput);
+
+  const totalAmount = needsPriceInput
+    ? (priceConfirmed ? parseFloat(variablePrice) || 0 : 0)
+    : initialTotalAmount;
+
   const [selectedMethods, setSelectedMethods] = useState<PaymentMethod[]>(['dinheiro']);
   const [methodAmounts, setMethodAmounts] = useState<Record<PaymentMethod, number>>({
     dinheiro: 0, pix: 0, credito: 0, debito: 0,
@@ -75,6 +87,8 @@ export default function PaymentModal({
       setAvailableCredits([]);
       setTotalCreditBalance(0);
       setSelectedMethods(['dinheiro']);
+      setVariablePrice('');
+      setPriceConfirmed(!needsPriceInput);
       setMethodAmounts({ dinheiro: remainingAmount, pix: 0, credito: 0, debito: 0 });
       loadOrCreateClosing();
     }
@@ -247,14 +261,18 @@ export default function PaymentModal({
         if (txError) throw txError;
       }
 
-      // 3. Update appointment payment status (NOT status — that's set before calling modal)
+      // 3. Update appointment payment status + final_price for variable services
+      const aptUpdate: Record<string, unknown> = {
+        has_payment: !skipPayment,
+        payment_status: skipPayment ? 'none' : 'paid',
+        payment_paid_at: skipPayment ? null : now,
+      };
+      if (needsPriceInput && totalAmount > 0) {
+        aptUpdate.final_price = totalAmount;
+      }
       const { error: aptError } = await supabase
         .from('appointments')
-        .update({
-          has_payment: !skipPayment,
-          payment_status: skipPayment ? 'none' : 'paid',
-          payment_paid_at: skipPayment ? null : now,
-        })
+        .update(aptUpdate)
         .eq('id', appointmentId);
       if (aptError) throw aptError;
 
@@ -279,6 +297,22 @@ export default function PaymentModal({
     }
   }
 
+  function handleConfirmPrice() {
+    const val = parseFloat(variablePrice);
+    if (!val || val <= 0) {
+      showToast('error', 'Valor obrigatório', 'Informe o valor do serviço.');
+      return;
+    }
+    if (minPrice != null && val < minPrice) {
+      showToast('error', 'Valor abaixo do mínimo', `O valor mínimo é R$ ${minPrice.toFixed(2)}.`);
+      return;
+    }
+    setPriceConfirmed(true);
+    const remaining = calculateRemainingAmount(val, downpaymentAmount);
+    setMethodAmounts({ dinheiro: remaining, pix: 0, credito: 0, debito: 0 });
+    setSelectedMethods(['dinheiro']);
+  }
+
   const modalContent = (
     <div className="space-y-5">
       {/* Appointment info */}
@@ -293,7 +327,48 @@ export default function PaymentModal({
         </div>
       </div>
 
-      {/* Amounts */}
+      {/* Variable price input step */}
+      {needsPriceInput && !priceConfirmed && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-3">
+          <p className="text-sm text-amber-800 font-semibold">Defina o valor do serviço</p>
+          <p className="text-xs text-amber-600">
+            Este serviço tem valor variável. Informe o valor cobrado.
+            {minPrice != null && minPrice > 0 && (
+              <> Mínimo: R$ {minPrice.toFixed(2)}</>
+            )}
+          </p>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">R$</span>
+            <input
+              type="number"
+              step="0.01"
+              value={variablePrice}
+              onChange={(e) => setVariablePrice(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-background border border-amber-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary text-text text-lg font-medium"
+              placeholder={minPrice ? minPrice.toFixed(2) : '0.00'}
+              min={minPrice ?? 0}
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors font-medium"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleConfirmPrice}
+              className="flex-1 px-4 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors font-medium"
+            >
+              Confirmar Valor
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Amounts + payment — only show after price is confirmed */}
+      {priceConfirmed && (<>
       <div className="space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-text-muted">Total do serviço:</span>
@@ -461,6 +536,7 @@ export default function PaymentModal({
           Concluir sem pagamento (registrar inadimplência)
         </button>
       </div>
+      </>)}
     </div>
   );
 

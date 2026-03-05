@@ -37,7 +37,7 @@ interface Transaction {
     final_price: number | null;
     downpayment_amount: number;
     patient: { full_name: string };
-    procedure: { name: string; default_price: number };
+    procedure: { name: string; default_price: number; is_variable_price?: boolean; min_price?: number | null };
   };
 }
 
@@ -51,7 +51,7 @@ interface TodayAppt {
   final_price: number | null;
   patient_id: string;
   patient: { full_name: string } | null;
-  procedure: { name: string; default_price: number } | null;
+  procedure: { name: string; default_price: number; is_variable_price?: boolean; min_price?: number | null } | null;
 }
 
 interface Professional {
@@ -135,7 +135,7 @@ export default function CashRegister() {
           id, appointment_time, status, payment_status,
           downpayment_amount, downpayment_method, patient_id, final_price,
           patient:patients(full_name),
-          procedure:procedures(name, default_price)
+          procedure:procedures(name, default_price, is_variable_price, min_price)
         `)
         .eq('appointment_date', today)
         .eq('professional_id', profId)
@@ -165,7 +165,7 @@ export default function CashRegister() {
             appointment:appointments(
               final_price, downpayment_amount,
               patient:patients(full_name),
-              procedure:procedures(name, default_price)
+              procedure:procedures(name, default_price, is_variable_price, min_price)
             )
           `)
           .eq('closing_id', closing.id)
@@ -212,7 +212,7 @@ export default function CashRegister() {
           appointment:appointments(
             final_price, downpayment_amount,
             patient:patients(full_name),
-            procedure:procedures(name, default_price)
+            procedure:procedures(name, default_price, is_variable_price, min_price)
           )
         `)
         .eq('closing_id', closingId)
@@ -854,9 +854,15 @@ export default function CashRegister() {
           patientId={selectedAppt.patient_id}
           patientName={selectedAppt.patient?.full_name || ''}
           procedureName={selectedAppt.procedure?.name || ''}
-          totalAmount={selectedAppt.final_price ?? selectedAppt.procedure?.default_price ?? 0}
+          totalAmount={
+            (selectedAppt.procedure?.is_variable_price && selectedAppt.final_price == null)
+              ? 0
+              : (selectedAppt.final_price ?? selectedAppt.procedure?.default_price ?? 0)
+          }
           downpaymentAmount={selectedAppt.downpayment_amount}
           downpaymentMethod={selectedAppt.downpayment_method}
+          isVariablePrice={selectedAppt.procedure?.is_variable_price ?? false}
+          minPrice={selectedAppt.procedure?.min_price}
           onSuccess={() => { setShowPaymentModal(false); setSelectedAppt(null); loadToday(); }}
         />
       )}
