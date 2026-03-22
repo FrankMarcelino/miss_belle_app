@@ -42,6 +42,11 @@ serve(async (req) => {
           break
         }
 
+        if (await isExempt(supabaseAdmin, tenantId)) {
+          console.log(`Tenant ${tenantId} is exempt — skipping subscription update`)
+          break
+        }
+
         const stripeSubId = session.subscription as string
         const stripeSub   = await stripe.subscriptions.retrieve(stripeSubId)
 
@@ -85,6 +90,7 @@ serve(async (req) => {
         const sub      = event.data.object as Stripe.Subscription
         const tenantId = sub.metadata?.tenant_id ?? await getTenantIdByCustomer(supabaseAdmin, sub.customer as string)
         if (!tenantId) break
+        if (await isExempt(supabaseAdmin, tenantId)) { console.log(`Tenant ${tenantId} is exempt — skipping`); break }
 
         const priceId = sub.items.data[0]?.price.id
         const planId  = getPlanIdByPrice(priceId)
@@ -108,6 +114,7 @@ serve(async (req) => {
         const sub      = event.data.object as Stripe.Subscription
         const tenantId = sub.metadata?.tenant_id ?? await getTenantIdByCustomer(supabaseAdmin, sub.customer as string)
         if (!tenantId) break
+        if (await isExempt(supabaseAdmin, tenantId)) { console.log(`Tenant ${tenantId} is exempt — skipping`); break }
 
         await supabaseAdmin
           .from('subscriptions')
@@ -128,6 +135,7 @@ serve(async (req) => {
         const sub      = await stripe.subscriptions.retrieve(invoice.subscription as string)
         const tenantId = sub.metadata?.tenant_id ?? await getTenantIdByCustomer(supabaseAdmin, sub.customer as string)
         if (!tenantId) break
+        if (await isExempt(supabaseAdmin, tenantId)) { console.log(`Tenant ${tenantId} is exempt — skipping`); break }
 
         await supabaseAdmin
           .from('subscriptions')
@@ -149,6 +157,7 @@ serve(async (req) => {
         const sub      = await stripe.subscriptions.retrieve(invoice.subscription as string)
         const tenantId = sub.metadata?.tenant_id ?? await getTenantIdByCustomer(supabaseAdmin, sub.customer as string)
         if (!tenantId) break
+        if (await isExempt(supabaseAdmin, tenantId)) { console.log(`Tenant ${tenantId} is exempt — skipping`); break }
 
         await supabaseAdmin
           .from('subscriptions')
@@ -189,6 +198,18 @@ function getPlanIdByPrice(priceId: string): string {
   if (priceId === proPriceId)    return 'pro'
   if (priceId === clinicPriceId) return 'clinic'
   return 'starter'
+}
+
+async function isExempt(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('subscriptions')
+    .select('is_exempt')
+    .eq('tenant_id', tenantId)
+    .single()
+  return data?.is_exempt === true
 }
 
 async function getTenantIdByCustomer(

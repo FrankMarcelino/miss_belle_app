@@ -6,13 +6,16 @@ import { PLANS, PlanId, isSubscriptionActive } from '../lib/plans';
 export function usePlan() {
   const { subscription, isSuperAdmin, refreshSubscription } = useAuth();
 
-  const planId: PlanId = subscription?.plan_id ?? 'starter';
+  const isExempt = subscription?.is_exempt ?? false;
+
+  // Clínica isenta (owner) recebe plano Clínica completo sem cobrar
+  const planId: PlanId = isExempt ? 'clinic' : (subscription?.plan_id ?? 'starter');
   const plan = PLANS[planId];
-  const status = subscription?.status ?? 'active';
-  const isActive = isSubscriptionActive(status);
-  const isTrialing = status === 'trialing';
-  const isPastDue = status === 'past_due';
-  const isCanceled = status === 'canceled' || status === 'unpaid';
+  const status = isExempt ? 'active' : (subscription?.status ?? 'active');
+  const isActive = isExempt || isSubscriptionActive(status);
+  const isTrialing = !isExempt && status === 'trialing';
+  const isPastDue = !isExempt && status === 'past_due';
+  const isCanceled = !isExempt && (status === 'canceled' || status === 'unpaid');
 
   const trialDaysLeft = (() => {
     if (!isTrialing || !subscription?.trial_ends_at) return 0;
@@ -87,6 +90,7 @@ export function usePlan() {
     planId,
     status,
     isActive,
+    isExempt,
     isTrialing,
     isPastDue,
     isCanceled,

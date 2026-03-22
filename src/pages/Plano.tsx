@@ -8,7 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { PLANS, PLAN_ORDER, isPlanUpgrade } from '../lib/plans';
 
 export default function Plano() {
-  const { plan, planId, isTrialing, isPastDue, isCanceled, trialDaysLeft,
+  const { plan, planId, isExempt, isTrialing, isPastDue, isCanceled, trialDaysLeft,
           cancelAtPeriodEnd, startCheckout, openBillingPortal } = usePlan();
   const { subscription, isSuperAdmin } = useAuth();
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
@@ -101,9 +101,14 @@ export default function Plano() {
             <p className="text-sm text-text-muted mb-1">Plano atual</p>
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold text-text">{plan.label}</h2>
-              <StatusBadge />
+              {isExempt ? (
+                <div className="inline-flex items-center gap-1.5 bg-primary/10 text-primary text-sm font-medium px-3 py-1.5 rounded-full border border-primary/20">
+                  <Shield className="w-3.5 h-3.5" />
+                  Conta da proprietária
+                </div>
+              ) : <StatusBadge />}
             </div>
-            {plan.price > 0 && (
+            {!isExempt && plan.price > 0 && (
               <p className="text-text-muted text-sm mt-1">
                 R$ {plan.price}/mês
                 {subscription?.current_period_end && (
@@ -118,8 +123,8 @@ export default function Plano() {
             )}
           </div>
 
-          {/* Botão portal de billing (só super_admin com assinatura paga) */}
-          {isSuperAdmin && subscription?.stripe_subscription_id && (
+          {/* Botão portal de billing (só super_admin com assinatura paga e não isenta) */}
+          {isSuperAdmin && !isExempt && subscription?.stripe_subscription_id && (
             <button
               onClick={handlePortal}
               disabled={portalLoading}
@@ -224,7 +229,7 @@ export default function Plano() {
                   ))}
                 </ul>
 
-                {isSuperAdmin && !isCurrent && pid !== 'starter' && (
+                {isSuperAdmin && !isExempt && !isCurrent && pid !== 'starter' && (
                   <button
                     onClick={() => handleCheckout(pid)}
                     disabled={!!checkoutLoading}
