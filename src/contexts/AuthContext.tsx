@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { PlanId, SubStatus } from '../lib/plans';
 
 interface Profile {
   id: string;
@@ -11,11 +12,27 @@ interface Profile {
   tenant_id: string;
 }
 
+export interface Subscription {
+  id: string;
+  tenant_id: string;
+  stripe_subscription_id: string | null;
+  stripe_customer_id: string | null;
+  plan_id: PlanId;
+  status: SubStatus;
+  trial_ends_at: string | null;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  canceled_at: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   session: Session | null;
   loading: boolean;
+  subscription: Subscription | null;
+  refreshSubscription: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -30,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -66,19 +84,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('id', userId)
         .maybeSingle();
 
-      if (error) {
-        throw error;
-      }
-
-
-      if (!data) {
-      }
-
+      if (error) throw error;
       setProfile(data);
+
+      if (data?.tenant_id) {
+        await loadSubscription(data.tenant_id);
+      }
     } catch (error) {
       setProfile(null);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSubscription(tenantId: string) {
+    try {
+      const { data } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .maybeSingle();
+      setSubscription(data);
+    } catch {
+      setSubscription(null);
+    }
+  }
+
+  async function refreshSubscription() {
+    if (profile?.tenant_id) {
+      await loadSubscription(profile.tenant_id);
     }
   }
 
@@ -123,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     await supabase.auth.signOut();
     setProfile(null);
+    setSubscription(null);
   }
 
   const isSuperAdmin = profile?.role === 'super_admin';
@@ -133,6 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     profile,
     session,
     loading,
+    subscription,
+    refreshSubscription,
     signIn,
     signUp,
     signOut,

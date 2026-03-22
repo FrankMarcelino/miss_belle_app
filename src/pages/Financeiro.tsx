@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
+import { usePlan } from '../hooks/usePlan';
+import UpgradePrompt from '../components/UpgradePrompt';
 import PaymentModal from '../components/PaymentModal';
 import CashRegister from './CashRegister';
 import Expenses from './Expenses';
@@ -53,6 +55,11 @@ interface ReversalRecord {
 export default function Financeiro() {
   const { user, isSuperAdmin } = useAuth();
   const { showToast, ToastComponent } = useToast();
+  const { hasFeature } = usePlan();
+
+  if (!hasFeature('financeiro')) {
+    return <UpgradePrompt feature="financeiro" />;
+  }
   const [activeTab, setActiveTab] = useState<Tab>('em_aberto');
   const [showMaisDropdown, setShowMaisDropdown] = useState(false);
   const [maisTab, setMaisTab] = useState<'creditos' | 'estornos'>('creditos');

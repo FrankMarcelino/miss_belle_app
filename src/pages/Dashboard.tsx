@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { usePlan } from '../hooks/usePlan';
+import UpgradePrompt from '../components/UpgradePrompt';
 import {
   Calendar,
   Users,
@@ -103,6 +105,11 @@ function formatDateLabel(date: Date) {
 
 export default function Dashboard() {
   const { profile, isSuperAdmin, user } = useAuth();
+  const { hasFeature } = usePlan();
+
+  if (!hasFeature('dashboard')) {
+    return <UpgradePrompt feature="dashboard" />;
+  }
   const [periodMode, setPeriodMode] = useState<Period>('month');
   const [periodOffset, setPeriodOffset] = useState(0);
 

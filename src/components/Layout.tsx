@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from '../contexts/RouterContext';
+import { usePlan } from '../hooks/usePlan';
 import BottomNav from './mobile/BottomNav';
 import {
   LayoutDashboard,
@@ -13,7 +14,10 @@ import {
   Menu,
   X,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  CreditCard,
+  AlertCircle,
+  Clock,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -30,6 +34,7 @@ interface NavItem {
 export default function Layout({ children }: LayoutProps) {
   const { profile, signOut, isSuperAdmin } = useAuth();
   const { currentRoute, navigate } = useRouter();
+  const { plan, isTrialing, isPastDue, trialDaysLeft } = usePlan();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
@@ -90,6 +95,22 @@ export default function Layout({ children }: LayoutProps) {
                 </button>
               );
             })}
+
+            {/* Item Meu Plano */}
+            <button
+              onClick={() => { navigate('/plano'); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-text hover:bg-champagne-nuvem rounded-lg transition-colors group ${
+                currentRoute === '/plano' ? 'bg-champagne-nuvem' : ''
+              }`}
+            >
+              <CreditCard className={`w-5 h-5 transition-colors ${
+                currentRoute === '/plano' ? 'text-primary' : 'text-text-muted group-hover:text-primary'
+              }`} />
+              <span className="font-medium flex-1 text-left">Meu Plano</span>
+              <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                {plan.label}
+              </span>
+            </button>
           </nav>
 
           <div className="p-4 border-t border-accent/10">
@@ -130,7 +151,39 @@ export default function Layout({ children }: LayoutProps) {
           {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
 
-        <main className="p-4 lg:p-8 pb-24 md:pb-8 pt-16 lg:pt-8">
+        {/* Banner trial */}
+        {isTrialing && (
+          <div className="mx-4 mt-16 lg:mt-4 lg:mx-0 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <p className="text-sm text-amber-700 flex-1">
+              <strong>Trial:</strong> {trialDaysLeft} dia{trialDaysLeft !== 1 ? 's' : ''} restante{trialDaysLeft !== 1 ? 's' : ''} — seu cartão será cobrado ao final.
+            </p>
+            <button
+              onClick={() => navigate('/plano')}
+              className="text-xs font-semibold text-amber-700 hover:text-amber-900 flex-shrink-0"
+            >
+              Ver planos →
+            </button>
+          </div>
+        )}
+
+        {/* Banner past_due */}
+        {isPastDue && (
+          <div className="mx-4 mt-16 lg:mt-4 lg:mx-0 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
+            <p className="text-sm text-red-700 flex-1">
+              <strong>Pagamento pendente</strong> — atualize seu método de pagamento para continuar usando o Miss Belle.
+            </p>
+            <button
+              onClick={() => navigate('/plano')}
+              className="text-xs font-semibold text-red-700 hover:text-red-900 flex-shrink-0"
+            >
+              Resolver →
+            </button>
+          </div>
+        )}
+
+        <main className={`p-4 lg:p-8 pb-24 md:pb-8 ${isTrialing || isPastDue ? 'pt-4' : 'pt-16 lg:pt-8'}`}>
           {children}
         </main>
       </div>

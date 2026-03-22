@@ -1,6 +1,7 @@
 import { useAuth } from './contexts/AuthContext';
 import { useRouter } from './contexts/RouterContext';
 import Login from './pages/Login';
+import Landing from './pages/Landing';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Procedures from './pages/Procedures';
@@ -9,21 +10,29 @@ import Agenda from './pages/Agenda';
 import CashRegister from './pages/CashRegister';
 import Expenses from './pages/Expenses';
 import Financeiro from './pages/Financeiro';
+import Plano from './pages/Plano';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 function App() {
   const { user, loading, profile } = useAuth();
   const { currentRoute, navigate, getDefaultRoute } = useRouter();
+  const [showLogin, setShowLogin] = useState(false);
 
+  // Mostrar landing page novamente ao fazer logout
+  useEffect(() => {
+    if (!user && !loading) {
+      setShowLogin(false);
+    }
+  }, [user, loading]);
 
   // ✨ Redirecionar para rota apropriada quando usuário está logado
   useEffect(() => {
     if (!loading && user && profile) {
       const defaultRoute = getDefaultRoute(profile.role === 'super_admin');
-      
+
       // Se não está em nenhuma rota válida, navegar para a padrão
       if (!currentRoute || currentRoute === '/') {
         navigate(defaultRoute);
@@ -43,6 +52,9 @@ function App() {
   }
 
   if (!user) {
+    if (!showLogin) {
+      return <Landing onEnterClick={() => setShowLogin(true)} />;
+    }
     return <Login />;
   }
 
@@ -69,6 +81,8 @@ function App() {
         return <Expenses />;
       case '/financeiro':
         return <Financeiro />;
+      case '/plano':
+        return <Plano />;
       default:
         return <Dashboard />;
     }

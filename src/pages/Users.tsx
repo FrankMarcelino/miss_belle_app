@@ -3,6 +3,7 @@ import { supabase, supabaseUrl } from '../lib/supabase';
 import { Plus, Edit2, Loader2, Search, Power, Trash2, Settings, Calendar, Scissors, Users as UsersIcon, Key } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
+import { usePlan } from '../hooks/usePlan';
 import Toast from '../components/Toast';
 import { parseSupabaseError } from '../lib/errorHandling';
 
@@ -41,6 +42,7 @@ interface UserDependencies {
 export default function Users() {
   const { isSuperAdmin, loading: authLoading, user: currentUser } = useAuth();
   const { toast, showToast, hideToast } = useToast();
+  const { canAddProfessional, plan } = usePlan();
   const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -348,7 +350,16 @@ export default function Users() {
           <p className="text-text-muted mt-1">Gerencie os usuários do sistema</p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => {
+            if (!canAddProfessional(users.length)) {
+              showToast('error',
+                `Limite do plano ${plan.label}`,
+                `Seu plano permite até ${plan.maxProfessionals} profissional(is). Faça upgrade em Meu Plano.`
+              );
+              return;
+            }
+            setShowCreateModal(true);
+          }}
           className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg transition-colors shadow-soft"
         >
           <Plus className="w-5 h-5" />
