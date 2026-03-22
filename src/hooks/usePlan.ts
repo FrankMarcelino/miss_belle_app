@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { PLANS, PlanId, isSubscriptionActive } from '../lib/plans';
 
 export function usePlan() {
-  const { subscription, session, isSuperAdmin, refreshSubscription } = useAuth();
+  const { subscription, isSuperAdmin, refreshSubscription } = useAuth();
 
   const planId: PlanId = subscription?.plan_id ?? 'starter';
   const plan = PLANS[planId];
@@ -47,12 +47,11 @@ export function usePlan() {
   const startCheckout = useCallback(
     async (targetPlanId: PlanId) => {
       if (!isSuperAdmin) return;
-      if (!session?.access_token) return;
 
       try {
+        // supabase.functions.invoke injeta o token da sessão atual automaticamente
         const { data, error } = await supabase.functions.invoke('create-checkout-session', {
           body: { plan_id: targetPlanId },
-          headers: { Authorization: `Bearer ${session.access_token}` },
         });
 
         if (error) throw error;
@@ -64,17 +63,14 @@ export function usePlan() {
         throw err;
       }
     },
-    [isSuperAdmin, session]
+    [isSuperAdmin]
   );
 
   const openBillingPortal = useCallback(async () => {
     if (!isSuperAdmin) return;
-    if (!session?.access_token) return;
 
     try {
-      const { data, error } = await supabase.functions.invoke('create-billing-portal-session', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const { data, error } = await supabase.functions.invoke('create-billing-portal-session');
 
       if (error) throw error;
       if (data?.url) {
@@ -84,7 +80,7 @@ export function usePlan() {
       console.error('Billing portal error:', err);
       throw err;
     }
-  }, [isSuperAdmin, session]);
+  }, [isSuperAdmin]);
 
   return {
     plan,
