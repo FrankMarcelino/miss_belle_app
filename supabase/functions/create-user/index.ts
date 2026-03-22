@@ -38,10 +38,10 @@ serve(async (req) => {
       )
     }
 
-    // Verificar se o caller é super admin
+    // Verificar se o caller é super admin e obter seu tenant_id
     const { data: callerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('role, is_active')
+      .select('role, is_active, tenant_id')
       .eq('id', user.id)
       .single()
 
@@ -94,7 +94,7 @@ serve(async (req) => {
       )
     }
 
-    // Criar profile
+    // Criar profile no mesmo tenant do super_admin que está convidando
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
@@ -103,6 +103,7 @@ serve(async (req) => {
         full_name,
         role,
         is_active: true,
+        tenant_id: callerProfile.tenant_id,
       })
 
     if (profileError) {
