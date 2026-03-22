@@ -14,10 +14,11 @@ import {
 import { PLANS, PLAN_ORDER } from '../lib/plans';
 
 interface LandingProps {
-  onEnterClick: () => void;
+  onLoginClick: () => void;
+  onSignUpClick: () => void;
 }
 
-export default function Landing({ onEnterClick }: LandingProps) {
+export default function Landing({ onLoginClick, onSignUpClick }: LandingProps) {
   return (
     <div className="min-h-screen bg-background font-sans">
       {/* ── Navbar ── */}
@@ -29,12 +30,20 @@ export default function Landing({ onEnterClick }: LandingProps) {
             </div>
             <span className="text-xl font-bold text-text">Miss Belle</span>
           </div>
-          <button
-            onClick={onEnterClick}
-            className="bg-primary hover:bg-primary-hover text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors shadow-soft"
-          >
-            Entrar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onLoginClick}
+              className="text-sm font-medium text-text-muted hover:text-text px-4 py-2.5 transition-colors"
+            >
+              Entrar
+            </button>
+            <button
+              onClick={onSignUpClick}
+              className="bg-primary hover:bg-primary-hover text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-soft"
+            >
+              Testar grátis
+            </button>
+          </div>
         </div>
       </header>
 
@@ -62,14 +71,14 @@ export default function Landing({ onEnterClick }: LandingProps) {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={onEnterClick}
+                onClick={onSignUpClick}
                 className="flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white font-semibold px-6 py-3.5 rounded-xl transition-colors shadow-soft-lg"
               >
-                Começar agora
+                Começar grátis — 14 dias
                 <ArrowRight className="w-4 h-4" />
               </button>
               <button
-                onClick={onEnterClick}
+                onClick={onLoginClick}
                 className="flex items-center justify-center gap-2 bg-white text-text font-medium px-6 py-3.5 rounded-xl border border-accent/20 hover:border-primary/30 transition-colors shadow-soft"
               >
                 Já tenho uma conta
@@ -156,8 +165,8 @@ export default function Landing({ onEnterClick }: LandingProps) {
       <section className="bg-white border-y border-accent/10 py-10 px-4 sm:px-6">
         <div className="max-w-3xl mx-auto grid grid-cols-3 gap-6 text-center">
           {[
-            { value: '+500', label: 'Agendamentos por mês' },
-            { value: '3x', label: 'Mais produtividade' },
+            { value: '14 dias', label: 'Trial gratuito, sem cartão' },
+            { value: '3 planos', label: 'Do solo à clínica completa' },
             { value: '100%', label: 'Feito para estética' },
           ].map((stat, i) => (
             <div key={i}>
@@ -378,7 +387,7 @@ export default function Landing({ onEnterClick }: LandingProps) {
                   </ul>
 
                   <button
-                    onClick={onEnterClick}
+                    onClick={onSignUpClick}
                     className={`w-full flex items-center justify-center gap-2 font-semibold py-3 rounded-xl transition-colors text-sm ${
                       p.highlight
                         ? 'bg-primary hover:bg-primary-hover text-white shadow-soft'
@@ -413,10 +422,10 @@ export default function Landing({ onEnterClick }: LandingProps) {
             com o Miss Belle.
           </p>
           <button
-            onClick={onEnterClick}
+            onClick={onSignUpClick}
             className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white font-semibold px-8 py-4 rounded-xl transition-colors shadow-soft-lg"
           >
-            Criar minha conta
+            Criar minha conta grátis
             <ArrowRight className="w-5 h-5" />
           </button>
         </div>
@@ -435,7 +444,7 @@ export default function Landing({ onEnterClick }: LandingProps) {
             © 2026 Miss Belle · Gestão de Clínica Estética
           </p>
           <button
-            onClick={onEnterClick}
+            onClick={onLoginClick}
             className="text-sm text-primary hover:text-primary-hover font-medium transition-colors"
           >
             Entrar na plataforma →

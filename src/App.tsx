@@ -20,12 +20,12 @@ import { useEffect, useState } from 'react';
 function App() {
   const { user, loading, profile, refreshSubscription } = useAuth();
   const { currentRoute, navigate, getDefaultRoute } = useRouter();
-  const [showLogin, setShowLogin] = useState(false);
+  const [authMode, setAuthMode] = useState<'hidden' | 'login' | 'signup'>('hidden');
 
   // Mostrar landing page novamente ao fazer logout
   useEffect(() => {
     if (!user && !loading) {
-      setShowLogin(false);
+      setAuthMode('hidden');
     }
   }, [user, loading]);
 
@@ -73,10 +73,15 @@ function App() {
   }
 
   if (!user) {
-    if (!showLogin) {
-      return <Landing onEnterClick={() => setShowLogin(true)} />;
+    if (authMode === 'hidden') {
+      return (
+        <Landing
+          onLoginClick={() => setAuthMode('login')}
+          onSignUpClick={() => setAuthMode('signup')}
+        />
+      );
     }
-    return <Login />;
+    return <Login initialMode={authMode} />;
   }
 
 
