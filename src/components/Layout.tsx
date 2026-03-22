@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from '../contexts/RouterContext';
 import { usePlan } from '../hooks/usePlan';
 import BottomNav from './mobile/BottomNav';
+import InstallPrompt from './InstallPrompt';
 import {
   LayoutDashboard,
   Calendar,
@@ -190,6 +191,9 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Mobile Bottom Navigation */}
       <BottomNav />
+
+      {/* PWA Install Prompt */}
+      <InstallPrompt />
 
       {sidebarOpen && (
         <div
