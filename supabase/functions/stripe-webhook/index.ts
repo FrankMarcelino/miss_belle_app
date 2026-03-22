@@ -37,14 +37,18 @@ serve(async (req) => {
         if (session.mode !== 'subscription') break
 
         const tenantId = session.metadata?.tenant_id
-        const planId   = session.metadata?.plan_id
-        if (!tenantId || !planId) {
-          console.error('Missing metadata in checkout session', session.id)
+        if (!tenantId) {
+          console.error('Missing tenant_id in checkout session metadata', session.id)
           break
         }
 
         const stripeSubId = session.subscription as string
         const stripeSub   = await stripe.subscriptions.retrieve(stripeSubId)
+
+        // Derivar plan_id pelo price_id (não depende do metadata)
+        const priceId = stripeSub.items.data[0]?.price.id
+        const planId  = getPlanIdByPrice(priceId) || session.metadata?.plan_id || 'pro'
+
         const status      = mapStripeStatus(stripeSub.status)
         const trialEndsAt = stripeSub.trial_end
           ? new Date(stripeSub.trial_end * 1000).toISOString()
@@ -52,7 +56,9 @@ serve(async (req) => {
         const periodStart = new Date(stripeSub.current_period_start * 1000).toISOString()
         const periodEnd   = new Date(stripeSub.current_period_end   * 1000).toISOString()
 
-        await supabaseAdmin
+        console.log(`Updating subscription: tenant=${tenantId} plan=${planId} status=${status}`)
+
+        const { error: updateError } = await supabaseAdmin
           .from('subscriptions')
           .update({
             stripe_subscription_id: stripeSubId,
@@ -65,6 +71,12 @@ serve(async (req) => {
             cancel_at_period_end:   stripeSub.cancel_at_period_end,
           })
           .eq('tenant_id', tenantId)
+
+        if (updateError) {
+          console.error('Failed to update subscription:', updateError)
+        } else {
+          console.log('Subscription updated successfully')
+        }
 
         break
       }
