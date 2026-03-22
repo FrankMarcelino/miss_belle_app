@@ -13,7 +13,9 @@ export default function Login({ initialMode = 'login' }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,6 +33,7 @@ export default function Login({ initialMode = 'login' }: LoginProps) {
     setError('');
     setSuccess('');
     setPassword('');
+    setPasswordConfirm('');
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -42,6 +45,11 @@ export default function Login({ initialMode = 'login' }: LoginProps) {
     if (mode === 'signup') {
       if (!fullName.trim()) {
         setError('Por favor, informe seu nome completo.');
+        setLoading(false);
+        return;
+      }
+      if (password !== passwordConfirm) {
+        setError('As senhas não coincidem. Verifique e tente novamente.');
         setLoading(false);
         return;
       }
@@ -190,6 +198,52 @@ export default function Login({ initialMode = 'login' }: LoginProps) {
                   {mode === 'signup' && (
                     <p className="text-xs text-text-muted mt-1">Mínimo de 6 caracteres</p>
                   )}
+                </div>
+              )}
+
+              {mode === 'signup' && (
+                <div>
+                  <label htmlFor="passwordConfirm" className="block text-sm font-medium text-text mb-1.5">
+                    Confirmar senha
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="passwordConfirm"
+                      type={showPasswordConfirm ? 'text' : 'password'}
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
+                      className={`w-full px-4 py-3 pr-11 bg-champagne-nuvem border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all text-text placeholder-text-muted ${
+                        passwordConfirm && password !== passwordConfirm
+                          ? 'border-red-300 bg-red-50'
+                          : passwordConfirm && password === passwordConfirm
+                          ? 'border-green-300'
+                          : 'border-accent/15'
+                      }`}
+                      placeholder="••••••••"
+                      required
+                      disabled={loading}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordConfirm((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPasswordConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {passwordConfirm && password !== passwordConfirm && (
+                    <p className="text-xs text-red-600 mt-1">As senhas não coincidem</p>
+                  )}
+                  {passwordConfirm && password === passwordConfirm && (
+                    <p className="text-xs text-green-600 mt-1">Senhas coincidem ✓</p>
+                  )}
+                </div>
+              )}
+
+              {mode !== 'signup' && (
+                <div className="hidden">{/* placeholder para fechar o bloco abaixo */}
                 </div>
               )}
 
