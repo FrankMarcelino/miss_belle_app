@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 function App() {
-  const { user, loading, profile } = useAuth();
+  const { user, loading, profile, refreshSubscription } = useAuth();
   const { currentRoute, navigate, getDefaultRoute } = useRouter();
   const [showLogin, setShowLogin] = useState(false);
 
@@ -25,6 +25,26 @@ function App() {
   useEffect(() => {
     if (!user && !loading) {
       setShowLogin(false);
+    }
+  }, [user, loading]);
+
+  // Detectar retorno do Stripe Checkout e atualizar subscription
+  useEffect(() => {
+    if (!user || loading) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      // Limpar parâmetro da URL sem recarregar a página
+      window.history.replaceState({}, '', window.location.pathname);
+      // Aguardar webhook processar (pode demorar alguns segundos) e recarregar
+      const refresh = async () => {
+        await refreshSubscription();
+        // Tentar mais uma vez após 3s caso o webhook ainda não tenha processado
+        setTimeout(async () => {
+          await refreshSubscription();
+        }, 3000);
+      };
+      refresh();
+      navigate('/plano');
     }
   }, [user, loading]);
 

@@ -17,20 +17,27 @@ serve(async (req) => {
       apiVersion: '2023-10-16',
     })
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
-    // Verificar autenticação
-    const authHeader = req.headers.get('Authorization')!
-    const token = authHeader.replace('Bearer ', '')
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+    // Client com token do usuário — padrão oficial Supabase para Edge Functions
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    const { data: { user }, error: authError } = await supabaseUser.auth.getUser()
 
     if (authError || !user) {
       return json({ error: 'Não autorizado' }, 401, corsHeaders)
     }
+
+    // Admin client para operações privilegiadas (sem RLS)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
 
     // Verificar se é super_admin
     const { data: profile } = await supabaseAdmin
