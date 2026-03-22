@@ -149,6 +149,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profileError) throw new Error('Erro ao criar perfil: ' + profileError.message);
 
       await loadProfile(authData.user.id);
+
+      // Email de boas-vindas (fire-and-forget — não bloqueia o signup)
+      supabase.functions.invoke('send-email', {
+        body: { type: 'welcome', to: email, data: { name: fullName } },
+      }).catch(() => { /* ignorar falha de email */ });
+
       return { error: null };
     } catch (error) {
       return { error: error as Error };

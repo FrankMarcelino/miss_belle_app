@@ -13,6 +13,7 @@ import Financeiro from './pages/Financeiro';
 import Plano from './pages/Plano';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import OnboardingWizard from './components/OnboardingWizard';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -113,6 +114,7 @@ function App() {
       <Layout>
         {renderPage()}
       </Layout>
+      <OnboardingWizard />
     </ProtectedRoute>
   );
 }

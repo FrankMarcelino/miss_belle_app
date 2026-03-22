@@ -81,6 +81,19 @@ serve(async (req) => {
           console.error('Failed to update subscription:', updateError)
         } else {
           console.log('Subscription updated successfully')
+          // Enviar email de confirmação de upgrade (fire-and-forget)
+          const admin = await getSuperAdminEmail(supabaseAdmin, tenantId)
+          if (admin) {
+            const planLabel = planId === 'clinic' ? 'Clínica' : 'Pro'
+            const trialDate = trialEndsAt
+              ? new Date(trialEndsAt).toLocaleDateString('pt-BR')
+              : null
+            sendEmail('plan_upgraded', admin.email, {
+              name: admin.name,
+              plan: planLabel,
+              ...(trialDate ? { trial_ends_at: trialDate } : {}),
+            })
+          }
         }
 
         break
@@ -164,6 +177,10 @@ serve(async (req) => {
           .update({ status: 'past_due' })
           .eq('tenant_id', tenantId)
 
+        // Enviar email de falha de pagamento (fire-and-forget)
+        const admin = await getSuperAdminEmail(supabaseAdmin, tenantId)
+        if (admin) sendEmail('payment_failed', admin.email, { name: admin.name })
+
         break
       }
 
@@ -210,6 +227,72 @@ async function isExempt(
     .eq('tenant_id', tenantId)
     .single()
   return data?.is_exempt === true
+}
+
+async function getSuperAdminEmail(
+  supabase: ReturnType<typeof createClient>,
+  tenantId: string
+): Promise<{ email: string; name: string } | null> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('email, full_name')
+    .eq('tenant_id', tenantId)
+    .eq('role', 'super_admin')
+    .single()
+  if (!data) return null
+  return { email: data.email, name: data.full_name }
+}
+
+async function sendEmail(
+  type: string,
+  to: string,
+  data: Record<string, string | number> = {}
+): Promise<void> {
+  const resendApiKey = Deno.env.get('RESEND_API_KEY') ?? ''
+  const appUrl       = Deno.env.get('APP_URL') ?? 'https://missebelle.app'
+  const fromEmail    = Deno.env.get('EMAIL_FROM') ?? 'Miss Belle <noreply@missebelle.app>'
+
+  if (!resendApiKey) {
+    console.warn('RESEND_API_KEY not set — skipping email')
+    return
+  }
+
+  const templates: Record<string, { subject: string; body: string }> = {
+    plan_upgraded: {
+      subject: `Plano ${data.plan ?? ''} ativado com sucesso! ✅`,
+      body: `<p>Olá, ${data.name ?? ''}!</p>
+             <p>Seu plano <strong>${data.plan ?? ''}</strong> foi ativado com sucesso.</p>
+             ${data.trial_ends_at ? `<p>Você tem trial gratuito até <strong>${data.trial_ends_at}</strong>.</p>` : ''}
+             <p><a href="${appUrl}/plano" style="color:#C4956A;">Ver meu plano</a></p>`,
+    },
+    payment_failed: {
+      subject: 'Problema no pagamento da sua assinatura ⚠️',
+      body: `<p>Olá, ${data.name ?? ''}!</p>
+             <p>Não conseguimos processar o pagamento da sua assinatura Miss Belle.</p>
+             <p><a href="${appUrl}/plano" style="color:#C4956A;">Atualizar método de pagamento</a></p>`,
+    },
+  }
+
+  const tpl = templates[type]
+  if (!tpl) return
+
+  const html = `<!DOCTYPE html><html><body style="font-family:sans-serif;color:#2D2424;max-width:500px;margin:40px auto;padding:24px">
+    <h2 style="color:#C4956A">Miss Belle 🌸</h2>${tpl.body}
+    <hr style="margin-top:32px;border:none;border-top:1px solid #eee">
+    <p style="font-size:12px;color:#999">Miss Belle — Sistema de gestão para clínicas de estética</p>
+  </body></html>`
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${resendApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: fromEmail, to, subject: tpl.subject, html }),
+    })
+    if (!res.ok) console.error('sendEmail failed:', await res.text())
+    else console.log(`Email [${type}] sent to ${to}`)
+  } catch (err) {
+    console.error('sendEmail error:', err)
+  }
 }
 
 async function getTenantIdByCustomer(
