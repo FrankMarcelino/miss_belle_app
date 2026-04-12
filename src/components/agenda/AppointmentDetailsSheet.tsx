@@ -98,6 +98,10 @@ export default function AppointmentDetailsSheet({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // Controla o fluxo de conclusão: true = PaymentModal vai gravar status='completed' junto
+  const [concludingService, setConcludingService] = useState(false);
+  // Alerta para agendamentos ainda no status 'scheduled' ao tentar concluir
+  const [showConcludeWarning, setShowConcludeWarning] = useState(false);
   // Local effective status — updates immediately after DB change so UI reflects correct state
   // without waiting for parent to re-fetch and pass a new appointment prop.
   const [effectiveStatus, setEffectiveStatus] = useState<Appointment['status']>(appointment.status);
@@ -137,22 +141,19 @@ export default function AppointmentDetailsSheet({
     return null;
   }
 
-  async function handleConclude() {
-    setUpdating(true);
-    try {
-      const { error } = await supabase
-        .from('appointments')
-        .update({ status: 'completed' })
-        .eq('id', appointment.id);
-      if (error) throw error;
-      setEffectiveStatus('completed');
+  function handleConclude() {
+    if (effectiveStatus === 'scheduled') {
+      setShowConcludeWarning(true);
+    } else {
+      setConcludingService(true);
       setShowPaymentModal(true);
-      onRefresh();
-    } catch (err) {
-      showToast('error', 'Erro', parseSupabaseError(err).title);
-    } finally {
-      setUpdating(false);
     }
+  }
+
+  function handleConcludeConfirm() {
+    setShowConcludeWarning(false);
+    setConcludingService(true);
+    setShowPaymentModal(true);
   }
 
   async function handleConcludeOnly() {
@@ -656,8 +657,35 @@ export default function AppointmentDetailsSheet({
         </div>
       )}
 
+      {/* Warning: concluindo sem confirmação */}
+      {showConcludeWarning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <p className="text-sm text-amber-800 font-semibold">Agendamento não confirmado</p>
+          </div>
+          <p className="text-sm text-amber-700">
+            Este agendamento ainda está como "Marcado" e não foi confirmado pelo profissional. Deseja concluí-lo assim mesmo?
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowConcludeWarning(false)}
+              className="flex-1 px-4 py-2.5 border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors font-medium text-sm"
+            >
+              Voltar
+            </button>
+            <button
+              onClick={handleConcludeConfirm}
+              className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors font-medium text-sm"
+            >
+              Continuar assim mesmo
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
-      {!isCancelled && !showSimpleCancel && (
+      {!isCancelled && !showSimpleCancel && !showConcludeWarning && (
         <div className="pt-4 border-t border-accent/10 space-y-3">
           {/* Primary action */}
           {primaryAction && (
@@ -822,7 +850,7 @@ export default function AppointmentDetailsSheet({
       {showPaymentModal && (
         <PaymentModal
           isOpen={showPaymentModal}
-          onClose={() => setShowPaymentModal(false)}
+          onClose={() => { setShowPaymentModal(false); setConcludingService(false); }}
           appointmentId={appointment.id}
           patientId={appointment.patient_id}
           patientName={appointment.patient?.full_name || ''}
@@ -832,7 +860,14 @@ export default function AppointmentDetailsSheet({
           downpaymentMethod={appointment.downpayment_method}
           isVariablePrice={isVariableProc}
           minPrice={appointment.procedure?.min_price}
-          onSuccess={() => { setShowPaymentModal(false); onRefresh(); onClose(); }}
+          concludeService={concludingService}
+          onSuccess={() => {
+            setShowPaymentModal(false);
+            setConcludingService(false);
+            if (concludingService) setEffectiveStatus('completed');
+            onRefresh();
+            onClose();
+          }}
         />
       )}
 

@@ -29,6 +29,8 @@ interface PaymentModalProps {
   isVariablePrice?: boolean;
   minPrice?: number | null;
   onSuccess: () => void;
+  /** Quando true, o modal também grava status='completed' no agendamento ao confirmar pagamento */
+  concludeService?: boolean;
 }
 
 interface MethodSplit {
@@ -56,6 +58,7 @@ export default function PaymentModal({
   isVariablePrice = false,
   minPrice,
   onSuccess,
+  concludeService = false,
 }: PaymentModalProps) {
   const { showToast } = useToast();
   const needsPriceInput = isVariablePrice && (!initialTotalAmount || initialTotalAmount <= 0);
@@ -76,6 +79,7 @@ export default function PaymentModal({
   const [availableCredits, setAvailableCredits] = useState<AvailableCredit[]>([]);
   const [totalCreditBalance, setTotalCreditBalance] = useState(0);
   const [creditApplied, setCreditApplied] = useState(false);
+  const [showSkipOption, setShowSkipOption] = useState(false);
 
   const remainingAmount = calculateRemainingAmount(totalAmount, downpaymentAmount);
   const creditToUse = creditApplied ? Math.min(totalCreditBalance, remainingAmount) : 0;
@@ -90,6 +94,7 @@ export default function PaymentModal({
       setVariablePrice('');
       setPriceConfirmed(!needsPriceInput);
       setMethodAmounts({ dinheiro: remainingAmount, pix: 0, credito: 0, debito: 0 });
+      setShowSkipOption(false);
       loadOrCreateClosing();
     }
   }, [isOpen]);
@@ -267,6 +272,9 @@ export default function PaymentModal({
         payment_status: skipPayment ? 'none' : 'paid',
         payment_paid_at: skipPayment ? null : now,
       };
+      if (concludeService) {
+        aptUpdate.status = 'completed';
+      }
       if (needsPriceInput && totalAmount > 0) {
         aptUpdate.final_price = totalAmount;
       }
@@ -277,7 +285,11 @@ export default function PaymentModal({
       if (aptError) throw aptError;
 
       if (skipPayment) {
-        showToast('warning', 'Atendimento sem pagamento', 'Registrado como inadimplência. Aparecerá em Financeiro > Em Aberto.');
+        showToast(
+          'warning',
+          concludeService ? 'Atendimento concluído sem pagamento' : 'Atendimento sem pagamento',
+          'Registrado como inadimplência. Aparecerá em Financeiro > Em Aberto.'
+        );
       } else {
         showToast(
           'success',
@@ -523,26 +535,57 @@ export default function PaymentModal({
             ) : (
               <>
                 <DollarSign className="w-5 h-5" />
-                Finalizar Pagamento
+                {concludeService ? 'Confirmar e Concluir' : 'Finalizar Pagamento'}
               </>
             )}
           </button>
         </div>
-        <button
-          onClick={() => handleSubmit(true)}
-          className="w-full px-4 py-2.5 text-sm text-text-muted hover:text-text border border-dashed border-accent/30 hover:border-accent/50 rounded-lg transition-colors"
-          disabled={loading}
-        >
-          Concluir sem pagamento (registrar inadimplência)
-        </button>
+
+        {/* Opção de inadimplência — escondida por padrão */}
+        {!showSkipOption ? (
+          <button
+            type="button"
+            onClick={() => setShowSkipOption(true)}
+            className="w-full text-xs text-text-muted hover:text-text text-center py-1 transition-colors"
+            disabled={loading}
+          >
+            O cliente não pagará agora
+          </button>
+        ) : (
+          <div className="border border-dashed border-orange-200 rounded-lg p-3 space-y-2 bg-orange-50">
+            <p className="text-xs text-orange-700 font-medium">
+              O atendimento será {concludeService ? 'concluído e ' : ''}registrado como inadimplência. O pagamento ficará em aberto no Financeiro.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSkipOption(false)}
+                className="flex-1 px-3 py-2 text-xs border border-accent/30 text-text hover:bg-champagne-nuvem rounded-lg transition-colors"
+                disabled={loading}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSubmit(true)}
+                className="flex-1 px-3 py-2 text-xs text-orange-700 border border-orange-300 bg-white hover:bg-orange-100 rounded-lg transition-colors font-medium"
+                disabled={loading}
+              >
+                Confirmar inadimplência
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       </>)}
     </div>
   );
 
+  const modalTitle = concludeService ? 'Concluir e Registrar Pagamento' : 'Registrar Pagamento';
+
   if (typeof window !== 'undefined' && window.innerWidth < 768) {
     return (
-      <BottomSheet isOpen={isOpen} onClose={onClose} title="Registrar Pagamento">
+      <BottomSheet isOpen={isOpen} onClose={onClose} title={modalTitle}>
         {modalContent}
       </BottomSheet>
     );
@@ -554,7 +597,7 @@ export default function PaymentModal({
     <div className="fixed inset-0 bg-grafite-rosado/50 flex items-center justify-center p-4 z-50">
       <div className="bg-background-card rounded-2xl shadow-soft-lg max-w-lg w-full p-6 border border-accent/20 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-text">Registrar Pagamento</h2>
+          <h2 className="text-xl font-semibold text-text">{modalTitle}</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-champagne-nuvem rounded-lg transition-colors"
