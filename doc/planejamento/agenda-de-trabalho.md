@@ -32,6 +32,8 @@ Disponibilidade, portanto, não é um dado que o Miss Belle tem e basta expor.
 | D-4 | Expediente **não é retroativo** — não invalida agendamento já existente | validar o passado |
 | D-5 | O cálculo de disponibilidade vive numa **função no Postgres**, consumida por app e API | módulo TS compartilhado; cada lado calcula o seu |
 | D-6 | Passo da grade **configurável por profissional** (15/30/60) | fixo |
+| D-7 | Faixa pode **virar a meia-noite** (`ends_at < starts_at`); o motor resolve o transbordo | cadastrar as duas pontas na mão |
+| D-8 | Não-sobreposição por **trigger**, não por constraint de exclusão (D-7 a inviabiliza) | duas regras, uma por caso |
 
 ## Modelo de dados
 
@@ -46,7 +48,9 @@ create table professional_schedules (
   ends_at         time not null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
-  check (ends_at > starts_at)
+  -- ends_at < starts_at é VÁLIDO: a faixa vira a meia-noite (D-7).
+  -- Só o intervalo de comprimento zero é proibido.
+  check (ends_at <> starts_at)
 );
 
 -- o que foge do padrão, nos dois sentidos
@@ -82,28 +86,36 @@ Uma linha descreve *todas* as terças, não uma terça. É a separação entre a
 regra e a instância — e a exceção é o que permite mexer na instância sem
 mentir sobre a regra.
 
-### Constraint de exclusão contra faixa sobreposta
+### Não-sobreposição: por que é trigger e não constraint de exclusão
 
 Nada acima impede gravar 09:00–12:00 **e** 11:00–15:00 na mesma terça, o que
 faria o motor contar 11:00–12:00 duas vezes. Checar isso no app significa
-depender de todo caminho de escrita lembrar de checar. O banco recusa sozinho
-com uma constraint de exclusão — o parente do `UNIQUE` que compara por
-sobreposição em vez de igualdade:
+depender de todo caminho de escrita lembrar de checar.
 
-```sql
-create extension if not exists btree_gist;
-create type timerange as range (subtype = time);
+A ferramenta natural seria uma **constraint de exclusão** — o parente do
+`UNIQUE` que compara por sobreposição (`&&`) em vez de igualdade. Ela não
+sobrevive a D-7: o Postgres recusa construir um range cujo fim é menor que o
+início, e `timerange('20:00','02:00')` estoura na construção. Cobrir só as
+faixas normais com a constraint e as que viram a noite com outra coisa criaria
+duas definições de "sobrepõe" — exatamente a dívida que este spec declara
+querer evitar.
 
-alter table professional_schedules
-  add constraint no_overlapping_ranges exclude using gist (
-    professional_id with =,
-    day_of_week     with =,
-    timerange(starts_at, ends_at) with &&
-  );
-```
+Fica então **um trigger de validação**, definição única, que normaliza cada
+faixa numa linha do tempo da semana (minuto 0 = domingo 00:00, minuto 10080 =
+fim de sábado, com o comprimento calculado por `(ends - starts + 1440) % 1440`).
+Nessa linha, a faixa que vira a noite é só um intervalo mais longo, sem caso
+especial, e a comparação volta a ser sobreposição de intervalos comuns.
 
-`btree_gist` é o que permite misturar comparação por igualdade
-(`professional_id`) com comparação por sobreposição (`&&`) no mesmo índice.
+**O que se perde:** trigger não protege contra corrida. Dois `INSERT`
+simultâneos podem passar os dois, coisa que a constraint impediria no nível do
+índice. Aceitável aqui porque expediente é configurado por uma pessoa numa
+tela — duas escritas conflitantes no mesmo profissional, no mesmo instante, não
+é cenário real.
+
+No projeto 2 a decisão se inverte: dois clientes agendando ao mesmo tempo **é**
+o cenário, e lá a constraint de exclusão (com `btree_gist` e `tstzrange`) é o
+instrumento certo — é ela que resolve a sobreposição que o índice UNIQUE
+parcial atual não pega, por só comparar horário de início idêntico.
 
 ### RLS
 
@@ -133,8 +145,13 @@ apresentações — é o que impede o bot e o app divergirem sobre o mesmo horá
 
 Por dia da janela:
 
-1. faixas do `day_of_week` ∪ faixas `extra` daquela data
-2. menos os `block` (sem horário = dia inteiro fora)
+1. faixas do `day_of_week` ∪ faixas `extra` daquela data, **mais a cauda das
+   faixas do dia anterior que viraram a meia-noite** (D-7)
+2. menos os `block`:
+   - `block` **de dia inteiro** mata o turno que *começa* naquele dia, cauda
+     inclusa — folga na sexta tem que levar junto o cliente da 01:00 de sábado,
+     senão ela folga e continua com gente marcada
+   - `block` **com horário** mata só aquela janela, naquela data de calendário
 3. dentro de cada faixa restante, candidatos de `slot_step_minutes` em `slot_step_minutes`
 4. mantém só o que **cabe inteiro**: `candidato + duração ≤ fim da faixa`
 5. remove o que colide com agendamento não-cancelado, pela duração de cada um
@@ -215,7 +232,15 @@ escritos antes do motor:
 - data de hoje → horário já passado não aparece
 - profissional consultando colega da mesma clínica → ocupação real, não "tudo livre"
 - profissional de outra clínica → exceção, não lista vazia
-- faixas sobrepostas no mesmo dia → recusadas pela constraint
+- faixas sobrepostas no mesmo dia → recusadas pelo trigger
+
+Virando a meia-noite (D-7):
+
+- sexta 20:00–02:00 → **sábado 00:30 aparece**
+- `block` de dia inteiro na sexta → a madrugada de sábado **também some**
+- `block` com horário no sábado 00:00–01:00 → tira só isso; 01:30 continua
+- sábado 20:00–02:00 → a cauda cai no **domingo**, atravessando a virada da semana
+- faixa que vira a noite sobrepondo a primeira faixa do dia seguinte → recusada
 
 ## Entrada em produção
 
@@ -223,16 +248,25 @@ No instante em que o motor entra, ninguém tem expediente cadastrado, e
 fail-closed faz o que promete: zero horário para todo mundo. Front subindo
 antes do dado é apagão auto-infligido.
 
-1. **Uma migration só** com tabelas, constraint, motor **e backfill** de um
-   expediente padrão para cada profissional existente. No mesmo arquivo: o que
-   precisa ser atômico não pode ficar em arquivos que sobem em transações
-   separadas.
+1. **Uma migration só** com tabelas, trigger, motor **e backfill** para cada
+   profissional existente: **00:00–23:59, nos sete dias da semana**. No mesmo
+   arquivo: o que precisa ser atômico não pode ficar em arquivos que sobem em
+   transações separadas.
 2. **Depois** o deploy do front. No intervalo, o app segue no loop de 24h e
    continua funcionando.
 3. Cada profissional corrige o próprio horário na tela nova.
 
-O padrão do backfill precisa ser confirmado com a operação — chute errado
-aparece como horário oferecido em hora que ninguém atende.
+O padrão é o dia inteiro de propósito: é **exatamente o que o app oferece
+hoje**, então a migration não tira horário de ninguém. Cogitou-se 05:00–22:00,
+descartado em 2026-09-18 — há profissionais que atendem de madrugada, e o
+backfill teria apagado a agenda delas até que abrissem a tela. Restringir é
+papel da UI, não do backfill.
+
+**Esse padrão é seguro enquanto o único consumidor é a tela**, onde a
+profissional vê e julga o que o sistema oferece. Quando a API do projeto 2
+entrar, quem lê é um bot, que vai oferecer 05:30 sem hesitar. Cada profissional
+ajustar o próprio expediente deixa de ser higiene e passa a ser **pré-requisito
+de entrada do projeto 2**.
 
 ## Pré-requisito: baseline do schema
 
