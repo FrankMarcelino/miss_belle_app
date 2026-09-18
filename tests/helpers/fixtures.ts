@@ -154,12 +154,14 @@ export async function slots(
   procedureId: string,
   startDate: string,
   days = 1,
+  excludeAppointmentId?: string,
 ): Promise<string[]> {
   const { data, error } = await db.rpc('get_available_slots', {
     p_professional_id: professionalId,
     p_procedure_id: procedureId,
     p_start_date: startDate,
     p_days: days,
+    ...(excludeAppointmentId ? { p_exclude_appointment_id: excludeAppointmentId } : {}),
   });
   if (error) throw new Error(`get_available_slots: ${error.message}`);
   return (data as { slot_date: string; slot_time: string }[])

@@ -132,6 +132,14 @@ describe('agendamentos existentes', () => {
     expect(await slots(db, ana.id, proc, TUE)).toEqual([`${TUE} 13:00`, `${TUE} 15:00`]);
   });
 
+  it('remarcação: o próprio agendamento não bloqueia o horário dele (exclude)', async () => {
+    const proc = await createProcedure(db, tenantId, 60);
+    await addShift(db, { tenantId, professionalId: ana.id, dayOfWeek: 2, startsAt: '13:00', endsAt: '16:00' });
+    const appt = await createAppointment(db, { tenantId, professionalId: ana.id, procedureId: proc, date: TUE, time: '14:00' });
+
+    expect(await slots(db, ana.id, proc, TUE, 1, appt)).toEqual(grid(TUE, '13:00', '15:00', 30));
+  });
+
   it('agendamento cancelado NÃO ocupa horário', async () => {
     const proc = await createProcedure(db, tenantId, 60);
     await addShift(db, { tenantId, professionalId: ana.id, dayOfWeek: 2, startsAt: '13:00', endsAt: '16:00' });

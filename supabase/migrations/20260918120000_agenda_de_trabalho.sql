@@ -212,7 +212,8 @@ create function public.get_available_slots(
   p_professional_id uuid,
   p_procedure_id    uuid,
   p_start_date      date    default null,  -- null = hoje, em Brasília
-  p_days            integer default 7
+  p_days            integer default 7,
+  p_exclude_appointment_id uuid default null  -- remarcação: o próprio não bloqueia
 )
 returns table (slot_date date, slot_time time)
 language plpgsql
@@ -307,6 +308,7 @@ begin
     join public.procedures pr on pr.id = a.procedure_id
     where a.professional_id = p_professional_id
       and a.status <> 'cancelled'
+      and a.id is distinct from p_exclude_appointment_id
       and a.appointment_date between v_first - 1 and v_last + 1
   )
   select
@@ -339,8 +341,8 @@ end;
 $$;
 
 -- Toda função nova em public nasce executável por anon no Supabase.
-revoke execute on function public.get_available_slots(uuid, uuid, date, integer) from public, anon;
-grant  execute on function public.get_available_slots(uuid, uuid, date, integer) to authenticated, service_role;
+revoke execute on function public.get_available_slots(uuid, uuid, date, integer, uuid) from public, anon;
+grant  execute on function public.get_available_slots(uuid, uuid, date, integer, uuid) to authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
 -- 8. check_appointment_conflict passa a usar o MESMO appointment_window()
