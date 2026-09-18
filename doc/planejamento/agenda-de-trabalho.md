@@ -33,7 +33,11 @@ Disponibilidade, portanto, não é um dado que o Miss Belle tem e basta expor.
 | D-5 | O cálculo de disponibilidade vive numa **função no Postgres**, consumida por app e API | módulo TS compartilhado; cada lado calcula o seu |
 | D-6 | Passo da grade **configurável por profissional** (15/30/60) | fixo |
 | D-7 | Faixa pode **virar a meia-noite** (`ends_at < starts_at`); o motor resolve o transbordo | cadastrar as duas pontas na mão |
-| D-8 | Não-sobreposição por **trigger**, não por constraint de exclusão (D-7 a inviabiliza) | duas regras, uma por caso |
+| D-8 | Não-sobreposição por **trigger** + lock advisory, não por constraint de exclusão (D-7 a inviabiliza) | duas regras, uma por caso |
+| D-9 | `00:00–00:00` = **24 horas** (fim ≤ início termina no dia seguinte) | `00:00–23:59`, que deixa buraco de 1 min à meia-noite |
+| D-10 | Profissional **nova nasce com 24h** nos 7 dias (trigger em `profiles`) | nascer sem expediente = agenda vazia no onboarding |
+| D-11 | Toda hora é **de parede, em America/Sao_Paulo** (`app_local_now()`) | `current_date`/`now()` em UTC: das 21h às 24h, "hoje" vira amanhã |
+| D-12 | Motor em **intervalo absoluto** (`tsmultirange`), não dia a dia | dia a dia perde o slot e o conflito que atravessam 00:00 |
 
 ## Modelo de dados
 
@@ -48,9 +52,8 @@ create table professional_schedules (
   ends_at         time not null,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
-  -- ends_at < starts_at é VÁLIDO: a faixa vira a meia-noite (D-7).
-  -- Só o intervalo de comprimento zero é proibido.
-  check (ends_at <> starts_at)
+  -- ends_at <= starts_at é VÁLIDO: a faixa vira a meia-noite (D-7);
+  -- ends_at = starts_at é exatamente 24h (D-9).
 );
 
 -- o que foge do padrão, nos dois sentidos
@@ -106,11 +109,11 @@ fim de sábado, com o comprimento calculado por `(ends - starts + 1440) % 1440`)
 Nessa linha, a faixa que vira a noite é só um intervalo mais longo, sem caso
 especial, e a comparação volta a ser sobreposição de intervalos comuns.
 
-**O que se perde:** trigger não protege contra corrida. Dois `INSERT`
-simultâneos podem passar os dois, coisa que a constraint impediria no nível do
-índice. Aceitável aqui porque expediente é configurado por uma pessoa numa
-tela — duas escritas conflitantes no mesmo profissional, no mesmo instante, não
-é cenário real.
+**Corrida:** trigger sozinho não protege — dois `INSERT` simultâneos passariam
+os dois pela checagem. O trigger toma um **lock advisory** (`pg_advisory_xact_lock`)
+com chave derivada do id da profissional: gravações no expediente da mesma
+pessoa esperam uma pela outra até o commit, e a checagem da segunda enxerga a
+linha da primeira. Profissionais diferentes não se bloqueiam.
 
 No projeto 2 a decisão se inverte: dois clientes agendando ao mesmo tempo **é**
 o cenário, e lá a constraint de exclusão (com `btree_gist` e `tstzrange`) é o
@@ -249,7 +252,7 @@ fail-closed faz o que promete: zero horário para todo mundo. Front subindo
 antes do dado é apagão auto-infligido.
 
 1. **Uma migration só** com tabelas, trigger, motor **e backfill** para cada
-   profissional existente: **00:00–23:59, nos sete dias da semana**. No mesmo
+   profissional existente: **00:00–00:00 (24h, D-9), nos sete dias da semana**. No mesmo
    arquivo: o que precisa ser atômico não pode ficar em arquivos que sobem em
    transações separadas.
 2. **Depois** o deploy do front. No intervalo, o app segue no loop de 24h e
@@ -290,3 +293,49 @@ por `Bearer` sem `auth.uid()`, idempotência, `minNoticeHours`, `maxReschedules`
 e a corrida de agendamento sobreposto que o índice UNIQUE parcial atual não
 pega (só pega início idêntico; a solução é a mesma constraint de exclusão usada
 aqui).
+
+## Implementação (2026-09-18)
+
+Migration: `supabase/migrations/20260918120000_agenda_de_trabalho.sql`.
+Testes: `tests/available-slots.test.ts` — 28 casos contra Postgres local.
+
+### O motor é aritmética de intervalos
+
+O algoritmo "dia a dia" descrito acima foi substituído na implementação (D-12).
+Ele tinha dois furos na meia-noite, achados ao escrever os testes:
+
+- um slot de 60 min às 23:30 dentro de um turno 22:00–02:00 não era oferecido
+  (a sexta cortava em 24:00, o sábado começava em 00:00);
+- `check_appointment_conflict` só comparava agendamentos da **mesma data** —
+  sexta 23:30 de 60 min não conflitava com sábado 00:00. **Provado contra o
+  banco** antes da correção: a função devolvia `false`.
+
+Com tudo em `tsrange` (intervalo absoluto), a meia-noite deixa de ser caso
+especial:
+
+```
+livre = range_agg(turnos ∪ extras) − range_agg(bloqueios) − range_agg(agendamentos)
+```
+
+Três funções pequenas são a definição única de horário, usadas por todo mundo:
+
+| Função | O que é |
+|---|---|
+| `time_window(date, starts, ends)` | faixa → intervalo; fim ≤ início termina no dia seguinte |
+| `appointment_window(date, time, duração)` | quanto tempo um agendamento ocupa |
+| `app_local_now()` | agora, em hora de parede de Brasília |
+
+`check_appointment_conflict` foi reescrita sobre `appointment_window()` (mesma
+assinatura; o app continua chamando igual) e passou a olhar o dia anterior e o
+seguinte.
+
+### Divergências encontradas no caminho (fora deste escopo)
+
+- **`procedures.name` é `UNIQUE` global**, não por clínica
+  (`procedures_name_key`): duas clínicas não podem ter procedimento com o mesmo
+  nome. Sobra de antes da multi-tenancy.
+- **`supabase/seed.sql` está quebrado** desde a multi-tenancy (insere sem
+  `tenant_id`). É roteiro manual, não seed automático; o seed automático foi
+  desligado no `config.toml`.
+- **Não verificado:** se produção tem trigger em `auth.users` criado pelo
+  dashboard. O `db dump` exporta só `public`; no git, nenhuma migration cria um.

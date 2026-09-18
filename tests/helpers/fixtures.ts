@@ -25,7 +25,7 @@ export type Professional = { id: string; email: string; password: string };
 export async function createProfessional(
   db: SupabaseClient,
   tenantId: string,
-  opts: { role?: 'user' | 'super_admin'; slotStep?: 15 | 30 | 60; name?: string } = {},
+  opts: { role?: 'user' | 'super_admin'; slotStep?: 15 | 30 | 60; name?: string; keepDefaultSchedule?: boolean } = {},
 ): Promise<Professional> {
   const email = `prof-${randomUUID()}@teste.local`;
   const password = `senha-${randomUUID()}`;
@@ -46,6 +46,13 @@ export async function createProfessional(
   };
   if (opts.slotStep !== undefined) profile.slot_step_minutes = opts.slotStep;
   must('profile', await db.from('profiles').insert(profile).select('id').single());
+
+  // Profissional nova nasce com expediente 24h (trigger). A maioria dos testes
+  // quer montar o expediente do zero, então o padrão é limpar.
+  if (!opts.keepDefaultSchedule) {
+    const cleared = await db.from('professional_schedules').delete().eq('professional_id', id);
+    if (cleared.error) throw new Error(`limpar expediente padrão: ${cleared.error.message}`);
+  }
 
   return { id, email, password };
 }
@@ -158,4 +165,19 @@ export async function slots(
   return (data as { slot_date: string; slot_time: string }[])
     .map((r) => `${r.slot_date} ${r.slot_time.slice(0, 5)}`)
     .sort();
+}
+
+export async function hasConflict(
+  db: SupabaseClient,
+  c: { professionalId: string; procedureId: string; date: string; time: string; ignoreAppointmentId?: string },
+): Promise<boolean> {
+  const { data, error } = await db.rpc('check_appointment_conflict', {
+    p_professional_id: c.professionalId,
+    p_appointment_date: c.date,
+    p_appointment_time: c.time,
+    p_procedure_id: c.procedureId,
+    p_appointment_id: c.ignoreAppointmentId ?? null,
+  });
+  if (error) throw new Error(`check_appointment_conflict: ${error.message}`);
+  return data as boolean;
 }

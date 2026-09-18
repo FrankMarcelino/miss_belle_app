@@ -8,6 +8,7 @@ import {
   createProcedure,
   createProfessional,
   createTenant,
+  hasConflict,
   slots,
   type Professional,
 } from './helpers/fixtures';
@@ -259,5 +260,53 @@ describe('segurança (SECURITY DEFINER + portão de tenant)', () => {
     // Erro ESPECÍFICO: "função não existe" também é erro, e deixaria este teste
     // verde mesmo sem o revoke.
     await expect(slots(anon, ana.id, proc, TUE)).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe('expediente padrão (zero regressão)', () => {
+  it('profissional nova nasce com 24h nos 7 dias — inclusive o slot que atravessa a meia-noite', async () => {
+    const nova = await createProfessional(db, tenantId, { name: 'Nova', keepDefaultSchedule: true });
+    const proc = await createProcedure(db, tenantId, 60);
+
+    // 23:30 de 60 min termina 00:30 de quarta, que também é expediente.
+    expect(await slots(db, nova.id, proc, TUE)).toEqual(grid(TUE, '00:00', '23:30', 30));
+  });
+
+  it('00:00–00:00 significa 24 horas, não zero', async () => {
+    const proc = await createProcedure(db, tenantId, 60);
+    const res = await addShift(db, { tenantId, professionalId: ana.id, dayOfWeek: 2, startsAt: '00:00', endsAt: '00:00' });
+    expect(res.error).toBeNull();
+
+    const got = await slots(db, ana.id, proc, TUE);
+    expect(got[0]).toBe(`${TUE} 00:00`);
+    expect(got.at(-1)).toBe(`${TUE} 23:00`); // quarta não tem expediente: 23:30 não cabe
+  });
+});
+
+describe('check_appointment_conflict (lado da escrita)', () => {
+  it('sobreposição no mesmo dia → conflito; encostado → livre', async () => {
+    const proc = await createProcedure(db, tenantId, 60);
+    await createAppointment(db, { tenantId, professionalId: ana.id, procedureId: proc, date: TUE, time: '14:00' });
+
+    expect(await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: TUE, time: '14:30' })).toBe(true);
+    expect(await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: TUE, time: '15:00' })).toBe(false);
+    expect(await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: TUE, time: '13:00' })).toBe(false);
+  });
+
+  it('agendamento de sexta 23:30 (60 min) conflita com sábado 00:00 — antes passava, só olhava a mesma data', async () => {
+    const proc = await createProcedure(db, tenantId, 60);
+    await createAppointment(db, { tenantId, professionalId: ana.id, procedureId: proc, date: FRI, time: '23:30' });
+
+    expect(await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: SAT, time: '00:00' })).toBe(true);
+    expect(await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: SAT, time: '00:30' })).toBe(false);
+  });
+
+  it('o próprio agendamento não conflita consigo (remarcação)', async () => {
+    const proc = await createProcedure(db, tenantId, 60);
+    const appt = await createAppointment(db, { tenantId, professionalId: ana.id, procedureId: proc, date: TUE, time: '14:00' });
+
+    expect(
+      await hasConflict(db, { professionalId: ana.id, procedureId: proc, date: TUE, time: '14:30', ignoreAppointmentId: appt }),
+    ).toBe(false);
   });
 });
