@@ -15,9 +15,15 @@ set local lock_timeout = '5s';
 -- ----------------------------------------------------------------------------
 -- 1. Passo da grade, por profissional (D-6)
 -- ----------------------------------------------------------------------------
+--
+-- Quem já existe fica com 15 (o que o app oferecia: loop de 15 em 15);
+-- quem chegar depois nasce com 30. O ADD COLUMN com DEFAULT preenche as linhas
+-- existentes sem reescrever a tabela; o SET DEFAULT seguinte só vale para as
+-- futuras.
 alter table public.profiles
-  add column slot_step_minutes smallint not null default 30
+  add column slot_step_minutes smallint not null default 15
     constraint profiles_slot_step_minutes_check check (slot_step_minutes in (15, 30, 60));
+alter table public.profiles alter column slot_step_minutes set default 30;
 
 -- ----------------------------------------------------------------------------
 -- 2. Hora de parede de Brasília
