@@ -43,6 +43,7 @@ export default function Layout({ children }: LayoutProps) {
     ? [
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Agenda Geral', icon: Calendar, path: '/agenda-geral' },
+        { label: 'Expediente', icon: Clock, path: '/expediente' },
         { label: 'Usuários', icon: Users, path: '/usuarios', superAdminOnly: true },
         { label: 'Procedimentos', icon: Scissors, path: '/procedimentos' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
@@ -51,6 +52,7 @@ export default function Layout({ children }: LayoutProps) {
     : [
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Minha Agenda', icon: Calendar, path: '/minha-agenda' },
+        { label: 'Expediente', icon: Clock, path: '/expediente' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
         { label: 'Financeiro', icon: Wallet, path: '/financeiro' },

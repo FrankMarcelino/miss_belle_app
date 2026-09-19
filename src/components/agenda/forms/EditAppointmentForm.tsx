@@ -235,13 +235,14 @@ export default function EditAppointmentForm({
         />
       </div>
 
-      {professionalId && appointmentDate ? (
+      {professionalId && procedureId && appointmentDate ? (
         <div>
           <label className="block text-sm font-medium text-text mb-3">Horário *</label>
           <TimeSlotPicker
             value={appointmentTime}
             onChange={setAppointmentTime}
             professionalId={professionalId}
+            procedureId={procedureId}
             date={appointmentDate}
             excludeAppointmentId={appointment.id}
             disabled={loading}

@@ -294,20 +294,21 @@ export default function CreateAppointmentForm({
         />
       </div>
 
-      {professionalId && appointmentDate ? (
+      {professionalId && procedureId && appointmentDate ? (
         <div>
           <label className="block text-sm font-medium text-text mb-3">Horário *</label>
           <TimeSlotPicker
             value={appointmentTime}
             onChange={setAppointmentTime}
             professionalId={professionalId}
+            procedureId={procedureId}
             date={appointmentDate}
             disabled={loading}
           />
         </div>
       ) : (
         <div className="bg-blue-50 border-2 border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm">
-          Selecione um profissional e uma data para ver os horários disponíveis.
+          Selecione profissional, procedimento e data para ver os horários disponíveis.
         </div>
       )}
 
