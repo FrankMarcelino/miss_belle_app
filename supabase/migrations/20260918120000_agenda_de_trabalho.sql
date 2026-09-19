@@ -204,6 +204,63 @@ create policy "Own or admin: exceptions" on public.schedule_exceptions
   );
 
 -- ----------------------------------------------------------------------------
+-- 6b. Salvar um dia inteiro de expediente numa transação só
+--
+-- Pelo cliente seriam duas chamadas (apagar as faixas antigas, inserir as
+-- novas); se a segunda falhasse, o dia ficaria VAZIO — fail-closed, e a
+-- profissional perderia o dia sem perceber. Aqui é tudo ou nada.
+--
+-- SECURITY INVOKER: a RLS continua valendo. O portão explícito existe para a
+-- lista vazia na agenda da colega, onde o DELETE sob RLS apagaria 0 linhas e
+-- a função "daria certo" sem fazer nada.
+-- ----------------------------------------------------------------------------
+create function public.set_day_schedule(
+  p_professional_id uuid,
+  p_day_of_week     smallint,
+  p_ranges          jsonb   -- [{ "starts_at": "09:00", "ends_at": "12:00" }, ...]
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_tenant uuid;
+begin
+  -- Sob RLS, profissional de outra clínica nem aparece: mesmo erro de acesso,
+  -- sem revelar se o id existe.
+  select p.tenant_id into v_tenant from public.profiles p where p.id = p_professional_id;
+  if v_tenant is null then
+    raise exception 'access denied' using errcode = '42501';
+  end if;
+
+  if (select auth.uid()) is not null and not (
+       (select public.auth_tenant_id()) is not distinct from v_tenant
+       and (p_professional_id = (select auth.uid()) or (select public.is_super_admin()))
+     ) then
+    raise exception 'access denied' using errcode = '42501';
+  end if;
+
+  if p_day_of_week is null or p_day_of_week not between 0 and 6 then
+    raise exception 'p_day_of_week must be between 0 and 6' using errcode = '22023';
+  end if;
+
+  delete from public.professional_schedules
+   where professional_id = p_professional_id
+     and day_of_week = p_day_of_week;
+
+  -- O trigger de sobreposição roda por linha e enxerga as linhas anteriores
+  -- deste mesmo INSERT: faixas sobrepostas DENTRO da lista também são recusadas.
+  insert into public.professional_schedules (tenant_id, professional_id, day_of_week, starts_at, ends_at)
+  select v_tenant, p_professional_id, p_day_of_week, (r ->> 'starts_at')::time, (r ->> 'ends_at')::time
+  from pg_catalog.jsonb_array_elements(coalesce(p_ranges, '[]'::jsonb)) as r;
+end;
+$$;
+
+revoke execute on function public.set_day_schedule(uuid, smallint, jsonb) from public, anon;
+grant  execute on function public.set_day_schedule(uuid, smallint, jsonb) to authenticated, service_role;
+
+-- ----------------------------------------------------------------------------
 -- 7. Motor de disponibilidade (D-5)
 --
 --   livre = (turnos ∪ extras) − bloqueios − agendamentos
