@@ -339,3 +339,27 @@ seguinte.
   desligado no `config.toml`.
 - **Não verificado:** se produção tem trigger em `auth.users` criado pelo
   dashboard. O `db dump` exporta só `public`; no git, nenhuma migration cria um.
+
+### Tela de expediente (`/expediente`)
+
+`src/pages/Expediente.tsx` + `src/components/expediente/`. No menu da
+profissional e do admin; o admin escolhe de qual profissional está editando.
+
+- **Barra de 24h por dia da semana** (`WeekBar`): turnos na posição real do
+  relógio; a cauda do turno da véspera que vira a meia-noite aparece no começo
+  da barra do dia seguinte, em tom mais claro. Lógica em `src/lib/scheduleBar.ts`
+  (testada; mesma regra de `time_window`, só para desenhar).
+- **Salvar um dia** chama `set_day_schedule` — apagar + inserir numa transação.
+  Pelo cliente seriam duas chamadas, e a segunda falhando deixaria o dia vazio.
+- **Passo** (15/30/60) é `update` direto em `profiles` (a RLS já permite a
+  profissional alterar o próprio perfil).
+- **Exceções**: folga do dia inteiro, bloqueio de faixa, atendimento extra.
+- O erro de sobreposição (`23P01`) avisa que o conflito pode ser com o turno da
+  véspera ou do dia seguinte — a folha de edição mostra um dia só.
+
+`TimeSlotPicker` recebe `procedureId` e chama o motor; `get_available_slots`
+ganhou `p_exclude_appointment_id` para a remarcação não ser bloqueada pelo
+próprio agendamento.
+
+**Passo na migration:** quem já existe fica com 15 min (o que o app oferecia),
+quem chegar depois nasce com 30.

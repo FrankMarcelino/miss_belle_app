@@ -11,6 +11,7 @@ import CashRegister from './pages/CashRegister';
 import Expenses from './pages/Expenses';
 import Financeiro from './pages/Financeiro';
 import Plano from './pages/Plano';
+import Expediente from './pages/Expediente';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import OnboardingWizard from './components/OnboardingWizard';
@@ -93,6 +94,8 @@ function App() {
         return <Users />;
       case '/procedimentos':
         return <Procedures />;
+      case '/expediente':
+        return <Expediente />;
       case '/pacientes':
         return <Patients />;
       case '/minha-agenda':
