@@ -75,7 +75,12 @@ caminho de escrita precisa lembrar de normalizar.
 - `appointments.notes text`, `appointments.cancelled_at timestamptz`.
 - `appointments.occupies tsrange` gerada por `appointment_window(date, time,
   duration_minutes)` + `EXCLUDE USING gist (professional_id WITH =, occupies WITH &&)
-  WHERE (status <> 'cancelled' AND appointment_date >= <data de corte>)`.
+  WHERE (status <> 'cancelled' AND appointment_date >= DATE 'AAAA-MM-DD')`, onde a
+  data é **o dia em que a migration roda**, escrita como literal (constraint não
+  aceita data calculada). Se até lá surgir sobreposição nova em agendamento
+  ativo — o app atual ainda permite a corrida —, a criação da constraint **falha
+  e a migration inteira é desfeita**: sinal para medir de novo, nunca para
+  apagar dado.
 
 O motor (`get_available_slots`) e `check_appointment_conflict` passam a ler
 `appointments.duration_minutes` em vez do `JOIN` com `procedures`.
