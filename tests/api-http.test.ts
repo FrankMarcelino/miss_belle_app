@@ -47,6 +47,7 @@ beforeEach(async () => {
   await db.from('procedures').update({ description: 'Corte e escova', synonyms: ['escova'] }).eq('id', proc);
   await db.from('professional_procedures').insert({ tenant_id: tenantId, professional_id: ana.id, procedure_id: proc });
   await addShift(db, { tenantId, professionalId: ana.id, dayOfWeek: 2, startsAt: '09:00', endsAt: '18:00' });
+  await db.from('profiles').update({ bot_enabled: true }).eq('id', ana.id);
   key = await issueKey(tenantId);
 });
 
@@ -74,7 +75,8 @@ describe('autenticação', () => {
 
   it('a chave de uma clínica não enxerga a outra', async () => {
     const outra = await createTenant(db, 'Outra Clínica');
-    await createProfessional(db, outra, { name: 'Bia' });
+    const bia = await createProfessional(db, outra, { name: 'Bia' });
+    await db.from('profiles').update({ bot_enabled: true }).eq('id', bia.id);
 
     const r = await call('/professionals', { apiKey: await issueKey(outra, 'AB outra') });
     expect(r.body.data.map((p: any) => p.name)).toEqual(['Bia']);
@@ -101,6 +103,7 @@ describe('leituras', () => {
         durationMinutes: 60,
         price: 100,
         variablePrice: false,
+        bookable: true,
       },
     ]);
   });
@@ -135,6 +138,48 @@ describe('leituras', () => {
     const r = await call(`/professionals/${ana.id}/availability?procedureId=${outro}&days=1`);
     expect(r.status).toBe(422);
     expect(r.body.error.code).toBe('PROCEDURE_NOT_OFFERED');
+  });
+});
+
+describe('recorte do assistente', () => {
+  it('profissional fora do assistente não aparece na lista', async () => {
+    const bia = await createProfessional(db, tenantId, { name: 'Bia Fora' });
+
+    const r = await call('/professionals');
+    expect(r.body.data.map((p: any) => p.id)).toEqual([ana.id]);
+    expect(r.body.data.map((p: any) => p.id)).not.toContain(bia.id);
+  });
+
+  it('serviço não agendável continua na lista, marcado como bookable: false', async () => {
+    await db.from('procedures').update({ bot_bookable: false }).eq('id', proc);
+
+    const r = await call(`/professionals/${ana.id}/procedures`);
+    expect(r.body.data).toHaveLength(1);
+    expect(r.body.data[0].bookable).toBe(false);
+  });
+
+  it('pedir disponibilidade de serviço não agendável → 422 PROCEDURE_NOT_BOOKABLE', async () => {
+    await db.from('procedures').update({ bot_bookable: false }).eq('id', proc);
+
+    const r = await call(`/professionals/${ana.id}/availability?procedureId=${proc}&days=1`);
+    expect(r.status).toBe(422);
+    expect(r.body.error.code).toBe('PROCEDURE_NOT_BOOKABLE');
+  });
+
+  it('agendar serviço não agendável → 422 PROCEDURE_NOT_BOOKABLE (sinal para transferir)', async () => {
+    await db.from('procedures').update({ bot_bookable: false }).eq('id', proc);
+
+    const r = await call('/appointments', {
+      method: 'POST',
+      body: JSON.stringify({
+        professionalId: ana.id,
+        procedureId: proc,
+        dateTime: `${TUE}T14:00:00-03:00`,
+        client: { name: 'João Lima', phone: '+5588999990000' },
+      }),
+    });
+    expect(r.status).toBe(422);
+    expect(r.body.error.code).toBe('PROCEDURE_NOT_BOOKABLE');
   });
 });
 

@@ -21,12 +21,17 @@ const admin: SupabaseClient = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
 
+/**
+ * Profissional fora do assistente (`bot_enabled = false`) responde como
+ * inexistente: para quem chama, não há nada a fazer com esse id.
+ */
 async function professionalOf(tenantId: string, id: string) {
   const { data } = await admin
     .from('profiles')
     .select('id, full_name, is_active')
     .eq('tenant_id', tenantId)
     .eq('id', id)
+    .eq('bot_enabled', true)
     .maybeSingle();
   return data;
 }
@@ -34,7 +39,7 @@ async function professionalOf(tenantId: string, id: string) {
 async function procedureOf(tenantId: string, id: string) {
   const { data } = await admin
     .from('procedures')
-    .select('id, name, duration_minutes')
+    .select('id, name, duration_minutes, bot_bookable')
     .eq('tenant_id', tenantId)
     .eq('id', id)
     .maybeSingle();
@@ -55,7 +60,12 @@ async function offers(tenantId: string, professionalId: string, procedureId: str
 async function listProfessionals(tenantId: string, url: URL): Promise<Response> {
   const onlyAvailable = (url.searchParams.get('available') ?? 'true') !== 'false';
 
-  let query = admin.from('profiles').select('id, full_name, is_active').eq('tenant_id', tenantId).order('full_name');
+  let query = admin
+    .from('profiles')
+    .select('id, full_name, is_active')
+    .eq('tenant_id', tenantId)
+    .eq('bot_enabled', true)
+    .order('full_name');
   if (onlyAvailable) query = query.eq('is_active', true);
 
   const { data, error } = await query;
@@ -79,7 +89,7 @@ async function listProcedures(tenantId: string, professionalId: string): Promise
 
   const { data, error } = await admin
     .from('professional_procedures')
-    .select('procedures:procedure_id (id, name, description, synonyms, duration_minutes, default_price, is_variable_price, is_active)')
+    .select('procedures:procedure_id (id, name, description, synonyms, duration_minutes, default_price, is_variable_price, is_active, bot_bookable)')
     .eq('tenant_id', tenantId)
     .eq('professional_id', professionalId);
   if (error) return apiError(500, 'INTERNAL_ERROR', 'Não foi possível listar procedimentos.');
@@ -98,6 +108,8 @@ async function listProcedures(tenantId: string, professionalId: string): Promise
       durationMinutes: p.duration_minutes,
       price: Number(p.default_price),
       variablePrice: Boolean(p.is_variable_price),
+      // false: o agente fala sobre o serviço, mas não marca — transfere.
+      bookable: p.bot_bookable !== false,
     })),
   });
 }
@@ -117,11 +129,15 @@ async function availability(tenantId: string, professionalId: string, url: URL):
   if (!(await professionalOf(tenantId, professionalId))) {
     return apiError(404, 'PROFESSIONAL_NOT_FOUND', 'Profissional não encontrado.');
   }
-  if (!(await procedureOf(tenantId, procedureId))) {
+  const procedure = await procedureOf(tenantId, procedureId);
+  if (!procedure) {
     return apiError(404, 'PROCEDURE_NOT_FOUND', 'Procedimento não encontrado.');
   }
   if (!(await offers(tenantId, professionalId, procedureId))) {
     return apiError(422, 'PROCEDURE_NOT_OFFERED', 'Esta profissional não realiza este procedimento.');
+  }
+  if (procedure.bot_bookable === false) {
+    return apiError(422, 'PROCEDURE_NOT_BOOKABLE', 'Este serviço não é agendado pelo assistente.');
   }
 
   const { data, error } = await admin.rpc('get_available_slots', {
