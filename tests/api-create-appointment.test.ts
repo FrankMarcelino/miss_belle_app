@@ -241,6 +241,20 @@ describe('idempotência', () => {
     expect(r.code).toBe('IDEMPOTENCY_KEY_REUSED');
   });
 
+  it('registro de idempotência com mais de 24h é apagado no próximo POST', async () => {
+    await create({ idempotencyKey: 'velha' });
+    await db
+      .from('api_idempotency')
+      .update({ created_at: new Date(Date.now() - 25 * 3_600_000).toISOString() })
+      .eq('tenant_id', tenantId)
+      .eq('key', 'velha');
+
+    await create({ idempotencyKey: 'nova', dateTime: `${TUE}T15:00:00-03:00` });
+
+    const { data } = await db.from('api_idempotency').select('key').eq('tenant_id', tenantId);
+    expect(data?.map((r) => r.key)).toEqual(['nova']);
+  });
+
   it('a chave é por clínica: a mesma string em outra clínica não colide', async () => {
     await create({ idempotencyKey: 'abc-123' });
 

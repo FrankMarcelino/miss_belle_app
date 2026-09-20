@@ -22,11 +22,15 @@ create table public.api_idempotency (
 
 alter table public.api_idempotency enable row level security;  -- sem policy: só service_role
 
-select cron.schedule(
-  'api-idempotency-cleanup',
-  '17 4 * * *',
-  $$delete from public.api_idempotency where created_at < now() - interval '24 hours'$$
-);
+-- A limpeza é feita pelo próprio caminho de escrita, e não por pg_cron.
+--
+-- Produção não tem pg_cron (medido em 20/09: as extensões são btree_gist,
+-- pg_stat_statements, pgcrypto, plpgsql, supabase_vault e uuid-ossp). Depender
+-- de agendador que não existe deixaria a tabela crescendo para sempre em
+-- silêncio — e ninguém descobre, porque nada quebra.
+--
+-- Apagar aqui é barato: a chave primária é (tenant_id, key), então o DELETE
+-- percorre só as linhas daquele tenant, e cada POST já está numa transação.
 
 -- ----------------------------------------------------------------------------
 -- Sugestões de horário
@@ -97,6 +101,10 @@ begin
 
   -- 1. Idempotência antes de qualquer coisa: o retry não deve nem revalidar.
   if p_idempotency_key is not null then
+    delete from public.api_idempotency
+     where tenant_id = p_tenant_id
+       and created_at < now() - interval '24 hours';
+
     select * into v_stored
     from public.api_idempotency
     where tenant_id = p_tenant_id and key = p_idempotency_key;

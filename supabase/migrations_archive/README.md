@@ -17,3 +17,19 @@ saber *como* o banco está, leia o baseline.
 A migration do cron de trial (`20260322000002`) **não** foi arquivada: virou
 `00000000000001_trial_expiry_cron.sql`, porque job de `pg_cron` é dado
 (`cron.job`), não estrutura, e o dump não o captura.
+
+## 2026-09-20 — `00000000000001_trial_expiry_cron.sql`
+
+Arquivada porque **nunca foi aplicada em produção**. Medido em 20/09: o projeto
+não tem `pg_cron` nem `pg_net`, não existe schema `cron`, e a função
+`notify_trial_expiring` não existe no banco. O aviso de "7 dias antes do trial
+expirar" nunca chegou a funcionar.
+
+Em 19/09 ela foi carimbada como aplicada por um `migration repair`, por inferência
+("o arquivo está no repo, logo produção deve ter"). O dump do baseline já dizia o
+contrário — zero menções a `pg_cron` — e a pista não foi seguida. O carimbo foi
+desfeito (`repair --status reverted`) em 20/09.
+
+Reativar o aviso de trial exige decidir: habilitar `pg_cron` e `pg_net` no projeto
+e aplicar isto de novo, ou implementar de outro jeito (Edge Function agendada).
+Enquanto isso não for decidido, o arquivo fica aqui como histórico.
