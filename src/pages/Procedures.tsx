@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/Toast';
 import { parseSupabaseError } from '../lib/errorHandling';
+import { formatSynonyms, parseSynonyms } from '../lib/synonyms';
 import { Plus, Edit2, Trash2, Loader2, Search, Clock, DollarSign, AlertTriangle } from 'lucide-react';
 
 interface Procedure {
@@ -11,6 +12,8 @@ interface Procedure {
   duration_minutes: number;
   default_price: number;
   is_variable_price: boolean;
+  description?: string;
+  synonyms?: string[];
   min_price: number | null;
   is_active: boolean;
   created_at: string;
@@ -51,6 +54,8 @@ export default function Procedures() {
               id,
               name,
               duration_minutes,
+              description,
+              synonyms,
               default_price,
               is_variable_price,
               min_price,
@@ -242,6 +247,8 @@ interface CreateProcedureModalProps {
 function CreateProcedureModal({ onClose, onSuccess, showToast }: CreateProcedureModalProps) {
   const { user, isSuperAdmin } = useAuth();
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [synonyms, setSynonyms] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('30');
   const [defaultPrice, setDefaultPrice] = useState('');
   const [isVariablePrice, setIsVariablePrice] = useState(false);
@@ -259,6 +266,8 @@ function CreateProcedureModal({ onClose, onSuccess, showToast }: CreateProcedure
         .from('procedures')
         .insert({
           name,
+          description: description.trim(),
+          synonyms: parseSynonyms(synonyms),
           duration_minutes: parseInt(durationMinutes),
           default_price: defaultPrice ? parseFloat(defaultPrice) : 0,
           is_variable_price: isVariablePrice,
@@ -312,6 +321,37 @@ function CreateProcedureModal({ onClose, onSuccess, showToast }: CreateProcedure
               required
               disabled={loading}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Descrição
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              placeholder="O que é o serviço, em uma frase. O assistente do WhatsApp usa este texto ao explicar para a cliente."
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Como a cliente chama
+            </label>
+            <input
+              type="text"
+              value={synonyms}
+              onChange={(e) => setSynonyms(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              placeholder="escova, chapinha, corte + finalização"
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              Separe por vírgula. É assim que o assistente entende "quero fazer uma escova".
+            </p>
           </div>
 
           <div>
@@ -436,6 +476,8 @@ interface EditProcedureModalProps {
 
 function EditProcedureModal({ procedure, onClose, onSuccess, showToast }: EditProcedureModalProps) {
   const [name, setName] = useState(procedure.name);
+  const [description, setDescription] = useState(procedure.description ?? '');
+  const [synonyms, setSynonyms] = useState(formatSynonyms(procedure.synonyms));
   const [durationMinutes, setDurationMinutes] = useState(String(procedure.duration_minutes));
   const [defaultPrice, setDefaultPrice] = useState(String(procedure.default_price));
   const [isVariablePrice, setIsVariablePrice] = useState(procedure.is_variable_price ?? false);
@@ -453,6 +495,8 @@ function EditProcedureModal({ procedure, onClose, onSuccess, showToast }: EditPr
         .from('procedures')
         .update({
           name,
+          description: description.trim(),
+          synonyms: parseSynonyms(synonyms),
           duration_minutes: parseInt(durationMinutes),
           default_price: defaultPrice ? parseFloat(defaultPrice) : 0,
           is_variable_price: isVariablePrice,
@@ -494,6 +538,37 @@ function EditProcedureModal({ procedure, onClose, onSuccess, showToast }: EditPr
               required
               disabled={loading}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Descrição
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              placeholder="O que é o serviço, em uma frase. O assistente do WhatsApp usa este texto ao explicar para a cliente."
+              disabled={loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-text mb-2">
+              Como a cliente chama
+            </label>
+            <input
+              type="text"
+              value={synonyms}
+              onChange={(e) => setSynonyms(e.target.value)}
+              className="w-full px-4 py-2 bg-champagne-nuvem border border-accent/15 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent text-text"
+              placeholder="escova, chapinha, corte + finalização"
+              disabled={loading}
+            />
+            <p className="mt-1 text-xs text-text-muted">
+              Separe por vírgula. É assim que o assistente entende "quero fazer uma escova".
+            </p>
           </div>
 
           <div>

@@ -61,6 +61,8 @@ export default function Expediente() {
   const [rows, setRows] = useState<ShiftRow[]>([]);
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([]);
   const [step, setStep] = useState<number | null>(null);
+  const [minNotice, setMinNotice] = useState<number | null>(null);
+  const [maxReschedules, setMaxReschedules] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editingDow, setEditingDow] = useState<number | null>(null);
@@ -98,7 +100,7 @@ export default function Expediente() {
         .eq('professional_id', professionalId)
         .gte('exception_date', today)
         .order('exception_date'),
-      supabase.from('profiles').select('slot_step_minutes').eq('id', professionalId).single(),
+      supabase.from('profiles').select('slot_step_minutes, min_notice_hours, max_reschedules').eq('id', professionalId).single(),
     ]);
     if (id !== requestId.current) return;
 
@@ -108,6 +110,12 @@ export default function Expediente() {
       setRows(schedRes.data ?? []);
       setExceptions((excRes.data ?? []) as ExceptionRow[]);
       setStep(profRes.data?.slot_step_minutes ?? null);
+      setMinNotice(profRes.data?.min_notice_hours ?? null);
+      setMaxReschedules(profRes.data?.max_reschedules ?? null);
+      saved.current = {
+        min_notice_hours: profRes.data?.min_notice_hours ?? null,
+        max_reschedules: profRes.data?.max_reschedules ?? null,
+      };
     }
     setLoading(false);
   }, [professionalId, today]);
@@ -138,6 +146,28 @@ export default function Expediente() {
     showToast('success', `Expediente de ${DAY_LONG[editingDow].toLowerCase()} salvo`);
     await load();
     return null;
+  }
+
+  const saved = useRef<{ min_notice_hours: number | null; max_reschedules: number | null }>({
+    min_notice_hours: null,
+    max_reschedules: null,
+  });
+
+  async function savePolicy(field: 'min_notice_hours' | 'max_reschedules', value: number) {
+    if (saved.current[field] === value) return; // nada mudou: não grava nem avisa
+
+    const setter = field === 'min_notice_hours' ? setMinNotice : setMaxReschedules;
+    const previous = saved.current[field];
+    setter(value);
+
+    const { error } = await supabase.from('profiles').update({ [field]: value }).eq('id', professionalId);
+    if (error) {
+      setter(previous);
+      showToast('error', 'Regra não foi alterada', errorMessage(error));
+    } else {
+      saved.current[field] = value;
+      showToast('success', 'Regra atualizada');
+    }
   }
 
   async function saveStep(value: number) {
@@ -239,6 +269,49 @@ export default function Expediente() {
                   {s.label}
                 </button>
               ))}
+            </div>
+          </section>
+
+          <section aria-labelledby="whatsapp" className="space-y-3">
+            <h2 id="whatsapp" className="text-base font-semibold text-text">
+              Agendamentos pelo WhatsApp
+            </h2>
+            <p className="text-sm text-text-light max-w-prose">
+              Valem só para a cliente que marca sozinha pelo assistente. Você continua cancelando e
+              remarcando por aqui sem limite.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex flex-col gap-1">
+                <span className="text-sm text-text-light">Antecedência mínima para cancelar</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={72}
+                    value={minNotice ?? 0}
+                    onChange={(e) => setMinNotice(Math.max(0, Number(e.target.value)))}
+                    onBlur={(e) => savePolicy('min_notice_hours', Math.max(0, Number(e.target.value)))}
+                    className="w-20 px-3 py-2 bg-white border border-accent/20 rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="text-sm text-text-muted">horas</span>
+                </span>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="text-sm text-text-light">Remarcações permitidas</span>
+                <span className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={maxReschedules ?? 0}
+                    onChange={(e) => setMaxReschedules(Math.max(0, Number(e.target.value)))}
+                    onBlur={(e) => savePolicy('max_reschedules', Math.max(0, Number(e.target.value)))}
+                    className="w-20 px-3 py-2 bg-white border border-accent/20 rounded-lg text-text focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="text-sm text-text-muted">por agendamento</span>
+                </span>
+              </label>
             </div>
           </section>
 
