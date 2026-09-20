@@ -41,7 +41,8 @@ describe('emissão', () => {
 
     expect(key).toMatch(/^mb_[A-Za-z0-9_-]{40,}$/);
 
-    const { data } = await db.from('api_keys').select('key_hash, tenant_id, name, revoked_at, last_used_at');
+    // Sempre filtrar pela clínica do teste: outros arquivos também emitem chaves.
+    const { data } = await db.from('api_keys').select('key_hash, tenant_id, name, revoked_at, last_used_at').eq('tenant_id', tenantId);
     expect(data).toHaveLength(1);
     expect(data![0].key_hash).toBe(sha256(key));
     expect(data![0].tenant_id).toBe(tenantId);
@@ -62,7 +63,7 @@ describe('autenticação', () => {
 
     expect(await authenticate(key)).toBe(tenantId);
 
-    const { data } = await db.from('api_keys').select('last_used_at').single();
+    const { data } = await db.from('api_keys').select('last_used_at').eq('tenant_id', tenantId).single();
     expect(data?.last_used_at).not.toBeNull();
   });
 
@@ -99,7 +100,7 @@ describe('quem enxerga a tabela', () => {
     await issueKey();
     const asAna = await userClient(ana.email, ana.password);
 
-    const { data } = await asAna.from('api_keys').select('id');
+    const { data } = await asAna.from('api_keys').select('id').eq('tenant_id', tenantId);
     expect(data).toEqual([]);
   });
 
