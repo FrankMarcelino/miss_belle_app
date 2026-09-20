@@ -34,6 +34,9 @@ beforeEach(async () => {
   proc = await createProcedure(db, tenantId, 60);
   await db.from('professional_procedures').insert({ tenant_id: tenantId, professional_id: ana.id, procedure_id: proc });
   await addShift(db, { tenantId, professionalId: ana.id, dayOfWeek: 2, startsAt: '09:00', endsAt: '18:00' });
+  // Nasce fora do assistente (bot_enabled default false); estes testes são do
+  // caminho de quem está dentro. O recorte tem testes próprios em bot-scope.
+  await db.from('profiles').update({ bot_enabled: true }).eq('id', ana.id);
 });
 
 async function create(input: Partial<{
@@ -260,6 +263,7 @@ describe('idempotência', () => {
 
     const outra = await createTenant(db, 'Outra');
     const bia = await createProfessional(db, outra, { name: 'Bia', slotStep: 30 });
+    await db.from('profiles').update({ bot_enabled: true }).eq('id', bia.id);
     const procB = await createProcedure(db, outra, 60);
     await db.from('professional_procedures').insert({ tenant_id: outra, professional_id: bia.id, procedure_id: procB });
     await addShift(db, { tenantId: outra, professionalId: bia.id, dayOfWeek: 2, startsAt: '09:00', endsAt: '18:00' });

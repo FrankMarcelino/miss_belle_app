@@ -45,6 +45,10 @@ agendamentos.
 
 ## 1) `GET /professionals`
 
+Só aparecem as profissionais que a clínica habilitou para o assistente. Quem não
+está habilitada responde como inexistente nos demais endpoints (`404`), e não
+como "existe mas não pode" — para quem chama, não há nada a fazer com esse id.
+
 | Param | Tipo | Obrigatório | Descrição |
 |---|---|---|---|
 | `available` | boolean | não (default `true`) | `true`: só profissionais ativos. `false`: todos. |
@@ -72,7 +76,8 @@ tem esses campos.
       "synonyms": ["corte e escova", "escova modeladora"],
       "durationMinutes": 60,
       "price": 120.00,
-      "variablePrice": false
+      "variablePrice": false,
+      "bookable": true
     }
   ]
 }
@@ -82,6 +87,10 @@ tem esses campos.
 - `synonyms`: array, default `[]`. Uso interno para casar linguagem natural.
 - `variablePrice` **(novo)**: quando `true`, `price` é o **mínimo** — o bot deve
   dizer "a partir de", nunca prometer o valor exato.
+- `bookable` **(novo)**: quando `false`, o serviço existe e pode ser explicado ao
+  cliente, mas **não é agendado pela API** — tentar agendar devolve `422
+  PROCEDURE_NOT_BOOKABLE`, e o caminho é transferir para atendimento humano. É o
+  caso de cursos e de qualquer serviço que exija conversa antes.
 - `404 PROFESSIONAL_NOT_FOUND` se o profissional não existir nesta clínica.
 
 ## 3) `GET /professionals/{professionalId}/availability`
@@ -108,6 +117,8 @@ tem esses campos.
 - `days` > 60 → `400 MAX_RANGE_EXCEEDED`.
 - `422 PROCEDURE_NOT_OFFERED` **(novo)**: o procedimento existe, mas esta
   profissional não o realiza.
+- `422 PROCEDURE_NOT_BOOKABLE` **(novo)**: o serviço não é agendado pelo
+  assistente (ver `bookable` no endpoint 2).
 
 ## 4) `POST /appointments`
 
@@ -188,6 +199,7 @@ foi criado.
 |---|---|---|
 | 422 | `VALIDATION_ERROR` | campo obrigatório faltando, telefone inválido, `dateTime` sem offset. `details.field` indica qual |
 | 422 | `PROCEDURE_NOT_OFFERED` | a profissional não realiza o procedimento |
+| 422 | `PROCEDURE_NOT_BOOKABLE` | o serviço não é agendado pelo assistente; transferir para humano |
 | 404 | `PROFESSIONAL_NOT_FOUND` / `PROCEDURE_NOT_FOUND` | não existe nesta clínica |
 
 ## 5) `DELETE /appointments/{id}`
@@ -252,6 +264,30 @@ agendamentos marcados pela profissional no app, que nascem `SCHEDULED`.
 
 Ordenado por `dateTime` crescente. Nenhum agendamento → `{ "data": [] }` (nunca `404`).
 
+## 8) `GET /clinic` **(novo)**
+
+Responde de quem é a chave usada na chamada. Serve para o integrador conferir a
+própria configuração: chave errada colada vira erro na hora, em vez de
+atendimento na clínica errada.
+
+```json
+{
+  "id": "0000…",
+  "name": "Miss Belle",
+  "liviaTenantId": "1111…",
+  "timezone": "America/Sao_Paulo"
+}
+```
+
+- `liviaTenantId`: o tenant da LIVIA que esta chave atende. Vem `null` quando a
+  chave não está vinculada (é o caso do sandbox).
+- `timezone`: fixo em `America/Sao_Paulo` — é o fuso dos horários que toda a API
+  devolve, publicado aqui para não precisar ser adivinhado.
+- A chave **nunca** aparece na resposta, nem em hash.
+
+Recomendamos chamar isto uma vez ao configurar a integração e comparar com o
+tenant esperado do seu lado.
+
 ## Políticas
 
 `minNoticeHours` (padrão 2) e `maxReschedules` (padrão 1) são configuradas **por
@@ -275,11 +311,13 @@ webhooks `APPOINTMENT_CREATED`, `APPOINTMENT_CANCELLED`, `APPOINTMENT_RESCHEDULE
 | Código | HTTP | Endpoints |
 |---|---|---|
 | `UNAUTHORIZED` | 401 | todos |
+| `INTERNAL_ERROR` | 500 | todos |
 | `VALIDATION_ERROR` | 422 | todos com parâmetros |
 | `MAX_RANGE_EXCEEDED` | 400 | availability |
 | `PROFESSIONAL_NOT_FOUND` | 404 | 2, 3, 4 |
 | `PROCEDURE_NOT_FOUND` | 404 | 3, 4 |
 | `PROCEDURE_NOT_OFFERED` | 422 | 3, 4 |
+| `PROCEDURE_NOT_BOOKABLE` | 422 | 3, 4 |
 | `APPOINTMENT_NOT_FOUND` | 404 | 5, 6 |
 | `APPOINTMENT_NOT_ACTIVE` | 422 | 5, 6 |
 | `SLOT_NOT_AVAILABLE` | 422 | 4, 6 |

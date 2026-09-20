@@ -32,7 +32,8 @@ async function issueKey(tenant = tenantId, name = 'Agent Builder'): Promise<stri
 async function authenticate(key: string): Promise<string | null> {
   const { data, error } = await db.rpc('api_authenticate', { p_key_hash: sha256(key) });
   if (error) throw new Error(`api_authenticate: ${error.message}`);
-  return data as string | null;
+  // Devolve { tenantId, apiKeyId } desde o vínculo com a LIVIA.
+  return (data as { tenantId: string } | null)?.tenantId ?? null;
 }
 
 describe('emissão', () => {
