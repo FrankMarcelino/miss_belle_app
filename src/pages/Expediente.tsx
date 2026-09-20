@@ -92,7 +92,7 @@ export default function Expediente() {
     setLoading(true);
     setLoadError(null);
 
-    const [schedRes, excRes, profRes] = await Promise.all([
+    const [schedRes, excRes, profRes, policyRes] = await Promise.all([
       supabase.from('professional_schedules').select('day_of_week, starts_at, ends_at').eq('professional_id', professionalId),
       supabase
         .from('schedule_exceptions')
@@ -100,7 +100,10 @@ export default function Expediente() {
         .eq('professional_id', professionalId)
         .gte('exception_date', today)
         .order('exception_date'),
-      supabase.from('profiles').select('slot_step_minutes, min_notice_hours, max_reschedules').eq('id', professionalId).single(),
+      supabase.from('profiles').select('slot_step_minutes').eq('id', professionalId).single(),
+      // Consulta separada: as políticas são uma seção a mais, e uma seção a mais
+      // não pode derrubar o expediente, que é o que importa nesta tela.
+      supabase.from('profiles').select('min_notice_hours, max_reschedules').eq('id', professionalId).single(),
     ]);
     if (id !== requestId.current) return;
 
@@ -110,11 +113,14 @@ export default function Expediente() {
       setRows(schedRes.data ?? []);
       setExceptions((excRes.data ?? []) as ExceptionRow[]);
       setStep(profRes.data?.slot_step_minutes ?? null);
-      setMinNotice(profRes.data?.min_notice_hours ?? null);
-      setMaxReschedules(profRes.data?.max_reschedules ?? null);
+
+      // Falhou? A seção das políticas some e o resto da tela continua de pé.
+      const policy = policyRes.error ? null : policyRes.data;
+      setMinNotice(policy?.min_notice_hours ?? null);
+      setMaxReschedules(policy?.max_reschedules ?? null);
       saved.current = {
-        min_notice_hours: profRes.data?.min_notice_hours ?? null,
-        max_reschedules: profRes.data?.max_reschedules ?? null,
+        min_notice_hours: policy?.min_notice_hours ?? null,
+        max_reschedules: policy?.max_reschedules ?? null,
       };
     }
     setLoading(false);
@@ -272,6 +278,7 @@ export default function Expediente() {
             </div>
           </section>
 
+          {minNotice !== null && maxReschedules !== null && (
           <section aria-labelledby="whatsapp" className="space-y-3">
             <h2 id="whatsapp" className="text-base font-semibold text-text">
               Agendamentos pelo WhatsApp
@@ -314,6 +321,7 @@ export default function Expediente() {
               </label>
             </div>
           </section>
+          )}
 
           <section aria-labelledby="excecoes" className="space-y-3">
             <div className="flex items-center justify-between">
