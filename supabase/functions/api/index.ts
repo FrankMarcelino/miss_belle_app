@@ -270,9 +270,21 @@ serve(async (req) => {
   const path = url.pathname.replace(/^.*?\/api\/v1\/?/, '').split('/').filter(Boolean);
 
   try {
-    const tenantId = await authenticate(req, admin);
-    if (!tenantId) {
+    const caller = await authenticate(req, admin);
+    if (!caller) {
       return apiError(401, 'UNAUTHORIZED', 'Chave de API ausente ou inválida.');
+    }
+    const tenantId = caller.tenantId;
+
+    // De quem é esta chave? Os dois lados guardam um ponteiro para o outro, e
+    // este endpoint é o que torna a divergência detectável.
+    if (path[0] === 'clinic' && req.method === 'GET' && path.length === 1) {
+      const { data, error } = await admin.rpc('api_clinic_identity', {
+        p_tenant_id: tenantId,
+        p_api_key_id: caller.apiKeyId,
+      });
+      if (error || !data) return apiError(500, 'INTERNAL_ERROR', 'Não foi possível ler a clínica.');
+      return json(data);
     }
 
     if (path[0] === 'professionals') {

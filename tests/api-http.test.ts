@@ -141,6 +141,30 @@ describe('leituras', () => {
   });
 });
 
+describe('identidade da clínica', () => {
+  it('GET /clinic diz de quem é a chave', async () => {
+    const r = await call('/clinic');
+
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({
+      id: tenantId,
+      name: expect.any(String),
+      liviaTenantId: null,
+      timezone: 'America/Sao_Paulo',
+    });
+  });
+
+  it('sem chave, não diz nada', async () => {
+    const r = await call('/clinic', { apiKey: null });
+    expect(r.status).toBe(401);
+  });
+
+  it('a resposta não contém a chave', async () => {
+    const r = await call('/clinic');
+    expect(JSON.stringify(r.body)).not.toContain(key);
+  });
+});
+
 describe('recorte do assistente', () => {
   it('profissional fora do assistente não aparece na lista', async () => {
     const bia = await createProfessional(db, tenantId, { name: 'Bia Fora' });
