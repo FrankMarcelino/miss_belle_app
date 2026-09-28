@@ -223,8 +223,9 @@ describe('escritas', () => {
     const r = await call('/appointments', novo({ notes: 'sem sulfato' }));
 
     expect(r.status).toBe(201);
+    // #7: 2030 está a mais de 30 h — nasce SCHEDULED.
     expect(r.body).toMatchObject({
-      status: 'CONFIRMED',
+      status: 'SCHEDULED',
       dateTime: `${TUE}T14:00:00-03:00`,
       client: { name: 'João Lima', phone: '+5588999990000' },
       notes: 'sem sulfato',
@@ -309,8 +310,9 @@ describe('busca por telefone', () => {
 
     expect(r.status).toBe(200);
     expect(r.body.data).toHaveLength(1);
+    // #7: nasce SCHEDULED; a listagem padrão (SCHEDULED,CONFIRMED) continua achando.
     expect(r.body.data[0]).toMatchObject({
-      status: 'CONFIRMED',
+      status: 'SCHEDULED',
       professionalName: 'Ana Souza',
       dateTime: `${TUE}T14:00:00-03:00`,
       client: { name: 'João Lima', phone: '+5588999990000' },

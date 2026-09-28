@@ -72,13 +72,14 @@ async function blockSlot(createdAt: string, time = '14:00'): Promise<void> {
 }
 
 describe('caminho feliz', () => {
+  // #7: 2030 está a mais de 30 h — nasce SCHEDULED; só a confirmação de 24 h o torna CONFIRMED.
   it('cria o agendamento no formato do contrato', async () => {
     const r = await create({ notes: 'Prefere shampoo sem sulfato' });
 
     expect(r.http).toBe(201);
     expect(r.ok).toBe(true);
     expect(r.body).toMatchObject({
-      status: 'CONFIRMED',
+      status: 'SCHEDULED',
       professionalId: ana.id,
       procedureId: proc,
       dateTime: `${TUE}T14:00:00-03:00`,
@@ -88,7 +89,7 @@ describe('caminho feliz', () => {
     });
 
     const { data } = await db.from('appointments').select('status, appointment_time, duration_minutes').eq('id', r.body!.id as string).single();
-    expect(data).toMatchObject({ status: 'confirmed', appointment_time: '14:00:00', duration_minutes: 60 });
+    expect(data).toMatchObject({ status: 'scheduled', appointment_time: '14:00:00', duration_minutes: 60 });
   });
 
   it('reutiliza cliente já cadastrada pelo telefone — e o nome do cadastro vence', async () => {
