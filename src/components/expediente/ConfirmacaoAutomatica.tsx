@@ -77,10 +77,11 @@ export default function ConfirmacaoAutomatica({ professionalId, onToast }: Props
         Confirmação automática
       </h2>
       <p className="text-sm text-text-light max-w-prose">
-        Na véspera, às 9h, a cliente recebe uma mensagem pedindo para confirmar. Sem resposta, vai um
-        segundo aviso 4 horas depois. Sem resposta em mais 4 horas, <strong>o horário é liberado</strong> e
-        ela é avisada. Qualquer resposta dela suspende o cancelamento. Vale para todos os agendamentos
-        desta profissional, inclusive os marcados por aqui.
+        Na véspera, a cliente recebe uma mensagem pedindo para confirmar. Sem resposta, a mensagem é
+        repetida e, se a clínica tiver escolhido assim, <strong>o horário é liberado</strong> e ela é
+        avisada. Qualquer resposta dela suspende o cancelamento. Horário, tentativas e textos ficam em{' '}
+        <strong>Mensagens automáticas</strong>. Vale para todos os agendamentos desta profissional,
+        inclusive os marcados por aqui.
       </p>
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1">

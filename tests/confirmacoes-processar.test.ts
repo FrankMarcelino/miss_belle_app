@@ -80,29 +80,29 @@ describe('1º aviso', () => {
   });
 });
 
-describe('2º aviso', () => {
-  const segundo: Acao = { ...base, acao: 'segundo', conversation_id: CONV, primeiro_envio_em: '2030-01-07T12:30:00+00:00' };
+describe('lembrete (tentativa 2 em diante)', () => {
+  const segundo: Acao = { ...base, acao: 'lembrete', tentativa: 2, conversation_id: CONV, primeiro_envio_em: '2030-01-07T12:30:00+00:00' };
 
   it('pergunta se respondeu desde o 1º envio; não respondeu → envia', async () => {
     const d = deps([[segundo]]);
     await processarConfirmacoes(d);
     expect(d.respondeu).toHaveBeenCalledWith(CONV, '2030-01-07T12:30:00+00:00');
     expect(d.iniciarConversa).toHaveBeenCalled();
-    expect(d.registrar).toHaveBeenCalledWith('c1', 'segundo', 'enviado', CONV, null);
+    expect(d.registrar).toHaveBeenCalledWith('c1', 'lembrete', 'enviado', CONV, null);
   });
 
   it('respondeu → registra e NÃO envia', async () => {
     const d = deps([[segundo]], { respondeu: vi.fn(async () => ({ http: 200, body: { replied: true } })) });
     await processarConfirmacoes(d);
     expect(d.iniciarConversa).not.toHaveBeenCalled();
-    expect(d.registrar).toHaveBeenCalledWith('c1', 'segundo', 'respondeu', null, null);
+    expect(d.registrar).toHaveBeenCalledWith('c1', 'lembrete', 'respondeu', null, null);
   });
 
   it('não deu para saber → erro, sem enviar', async () => {
     const d = deps([[segundo]], { respondeu: vi.fn(async () => ({ http: 504, body: { error: 'gateway_unreachable' } })) });
     await processarConfirmacoes(d);
     expect(d.iniciarConversa).not.toHaveBeenCalled();
-    expect(d.registrar).toHaveBeenCalledWith('c1', 'segundo', 'erro', null, 'respondeu? 504 gateway_unreachable');
+    expect(d.registrar).toHaveBeenCalledWith('c1', 'lembrete', 'erro', null, 'respondeu? 504 gateway_unreachable');
   });
 });
 
