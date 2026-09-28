@@ -96,9 +96,22 @@ export function linhaDoTempo(c: ConfigConfirmacao | ConfigRetoque): Passo[] {
   return passos;
 }
 
-/** O texto como a cliente vai ler, com as variáveis de um exemplo. */
-export function previa(texto: string): string {
-  return texto.replace(/\{[a-z_]+\}/g, (v) => EXEMPLO[v] ?? v);
+/**
+ * O texto como a cliente vai ler, com as variáveis de um exemplo. Com a
+ * configuração, o que depende dela sai calculado: a hora de liberação e os
+ * dias do retoque — uma prévia com exemplo fixo ensinaria errado o que a tela
+ * existe para explicar.
+ */
+export function previa(texto: string, config?: ConfigConfirmacao | ConfigRetoque): string {
+  const valores: Record<string, string> = { ...EXEMPLO };
+  if (config?.kind === 'confirmacao') {
+    valores['{hora_cancelamento}'] = somaHoras(hhmm(config.send_time), config.interval_hours * config.attempts);
+  }
+  if (config?.kind === 'retoque') {
+    valores['{procedimento}'] = 'Micropigmentação';
+    valores['{dias}'] = String(config.days_after);
+  }
+  return texto.replace(/\{[a-z_]+\}/g, (v) => valores[v] ?? v);
 }
 
 /** Ajusta a lista de textos ao número de tentativas sem perder o que foi escrito. */

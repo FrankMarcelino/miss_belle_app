@@ -51,6 +51,17 @@ describe('previa', () => {
       .toBe('Oi, Mariana! Design de Sobrancelha amanhã, terça-feira, 30/09, às 15:00, com a Ana Paula.');
   });
 
+  it('a hora de liberação da prévia segue a configuração, não um exemplo fixo', () => {
+    expect(previa('Liberado às {hora_cancelamento}.', { ...confirmacao, attempts: 3, texts: ['a', 'b', 'c'] }))
+      .toBe('Liberado às 21:00.');
+    expect(previa('Liberado às {hora_cancelamento}.', { ...confirmacao, send_time: '08:00', interval_hours: 2 }))
+      .toBe('Liberado às 12:00.');
+  });
+
+  it('no retoque, o exemplo de procedimento é a micropigmentação', () => {
+    expect(previa('Já faz {dias} dias da sua {procedimento}.', retoque)).toBe('Já faz 40 dias da sua Micropigmentação.');
+  });
+
   it('variável desconhecida fica como está (a usuária vê o erro de digitação)', () => {
     expect(previa('Oi, {nme}!')).toBe('Oi, {nme}!');
   });

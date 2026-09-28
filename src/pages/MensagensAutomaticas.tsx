@@ -67,7 +67,10 @@ export default function MensagensAutomaticas() {
       showToast('error', 'Não foi salvo', erros.join(' '));
       return undefined;
     }
-    const { id, ...campos } = c;
+    const { id, ...resto } = c;
+    // Retoque não cancela nada: o banco exige on_no_reply = 'nada', e o padrão
+    // da coluna é 'cancelar' (o da confirmação). Sem isto o retoque não salvava.
+    const campos = c.kind === 'retoque' ? { ...resto, on_no_reply: 'nada' } : resto;
     const res = id
       ? await supabase.from('automated_messages').update({ ...campos, updated_at: new Date().toISOString() }).eq('id', id).select('id').single()
       : await supabase.from('automated_messages').insert(campos).select('id').single();
@@ -116,6 +119,10 @@ export default function MensagensAutomaticas() {
           const id = await salvar(confirmacao);
           if (id) setConfirmacao({ ...confirmacao, id });
         }}
+        depoisDosTextos={confirmacao.on_no_reply === 'cancelar' && (
+          <TextoComPrevia rotulo="Aviso de horário liberado" valor={confirmacao.cancel_text} config={confirmacao}
+            onChange={(v) => setConfirmacao({ ...confirmacao, cancel_text: v })} />
+        )}
       >
         <Numero rotulo="Intervalo entre mensagens" sufixo="horas" min={1} max={12}
           valor={confirmacao.interval_hours} onChange={(v) => setConfirmacao({ ...confirmacao, interval_hours: v })} />
@@ -128,11 +135,6 @@ export default function MensagensAutomaticas() {
           </select>
         </label>
       </Automacao>
-
-      {confirmacao.on_no_reply === 'cancelar' && (
-        <TextoComPrevia rotulo="Aviso de horário liberado" valor={confirmacao.cancel_text}
-          onChange={(v) => setConfirmacao({ ...confirmacao, cancel_text: v })} />
-      )}
 
       <Automacao
         titulo="Lembrete de retoque"
@@ -191,10 +193,11 @@ type AutomacaoProps = {
   padraoTextos: string[];
   onChange: (c: ConfigConfirmacao | ConfigRetoque) => void;
   onSalvar: () => Promise<void>;
+  depoisDosTextos?: React.ReactNode;
   children: React.ReactNode;
 };
 
-function Automacao({ titulo, descricao, config, variaveis, padraoTextos, onChange, onSalvar, children }: AutomacaoProps) {
+function Automacao({ titulo, descricao, config, variaveis, padraoTextos, onChange, onSalvar, depoisDosTextos, children }: AutomacaoProps) {
   const [salvando, setSalvando] = useState(false);
   const id = titulo.toLowerCase().replace(/\s+/g, '-');
 
@@ -235,9 +238,10 @@ function Automacao({ titulo, descricao, config, variaveis, padraoTextos, onChang
       </ol>
 
       {config.texts.map((t, i) => (
-        <TextoComPrevia key={i} rotulo={`${i + 1}ª mensagem`} valor={t}
+        <TextoComPrevia key={i} rotulo={`${i + 1}ª mensagem`} valor={t} config={config}
           onChange={(v) => onChange({ ...config, texts: config.texts.map((x, j) => (j === i ? v : x)) })} />
       ))}
+      {depoisDosTextos}
       <p className="text-xs text-text-muted">
         Dá para usar: {variaveis.join(', ')}. Na prévia, elas aparecem preenchidas com um exemplo.
       </p>
@@ -266,7 +270,9 @@ function Numero({ rotulo, sufixo, min, max, valor, onChange }: {
   );
 }
 
-function TextoComPrevia({ rotulo, valor, onChange }: { rotulo: string; valor: string; onChange: (v: string) => void }) {
+function TextoComPrevia({ rotulo, valor, config, onChange }: {
+  rotulo: string; valor: string; config: ConfigConfirmacao | ConfigRetoque; onChange: (v: string) => void;
+}) {
   return (
     <div className="grid gap-3 md:grid-cols-2">
       <label className="flex flex-col gap-1">
@@ -276,7 +282,7 @@ function TextoComPrevia({ rotulo, valor, onChange }: { rotulo: string; valor: st
       <div className="flex flex-col gap-1" aria-label={`Prévia: ${rotulo}`}>
         <span className="text-sm text-text-light">Como a cliente vê</span>
         <p className="self-start max-w-sm whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-[#DCF8C6] px-3 py-2 text-sm text-text shadow-sm">
-          {previa(valor)}
+          {previa(valor, config)}
         </p>
       </div>
     </div>
