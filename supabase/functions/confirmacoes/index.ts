@@ -23,6 +23,16 @@ const admin = createClient(
   { auth: { persistSession: false, autoRefreshToken: false } },
 );
 
+// Comparação em tempo constante: `!==` para no 1º caractere diferente, e o
+// tempo de resposta vazaria o segredo aos poucos. O hash iguala os tamanhos.
+async function mesmoSegredo(recebido: string, esperado: string): Promise<boolean> {
+  const hash = async (s: string) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
+  const [a, b] = await Promise.all([hash(recebido), hash(esperado)]);
+  let dif = 0;
+  for (let i = 0; i < a.length; i++) dif |= a[i] ^ b[i];
+  return dif === 0;
+}
+
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -34,7 +44,7 @@ serve(async (req) => {
     console.error('confirmacoes: segredos ausentes — nada feito');
     return json(503, { error: 'not_configured' });
   }
-  if (req.headers.get('Authorization') !== `Bearer ${segredo}`) {
+  if (!(await mesmoSegredo(req.headers.get('Authorization') ?? '', `Bearer ${segredo}`))) {
     return json(401, { error: 'unauthorized' });
   }
 

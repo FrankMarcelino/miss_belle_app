@@ -8,6 +8,7 @@ import { DAY_LONG, WEEK_ORDER, formatRange, type ShiftRow } from '../lib/schedul
 import WeekBar, { HourScale } from '../components/expediente/WeekBar';
 import DayEditorSheet, { type RangeInput } from '../components/expediente/DayEditorSheet';
 import ExceptionSheet, { type ExceptionInput } from '../components/expediente/ExceptionSheet';
+import ConfirmacaoAutomatica from '../components/expediente/ConfirmacaoAutomatica';
 
 interface ExceptionRow {
   id: string;
@@ -322,6 +323,8 @@ export default function Expediente() {
             </div>
           </section>
           )}
+
+          {professionalId && <ConfirmacaoAutomatica professionalId={professionalId} onToast={showToast} />}
 
           <section aria-labelledby="excecoes" className="space-y-3">
             <div className="flex items-center justify-between">
