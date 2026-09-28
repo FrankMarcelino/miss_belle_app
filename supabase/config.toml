@@ -423,3 +423,7 @@ enabled = true
 # função (supabase/functions/api/auth.ts).
 [functions.api]
 verify_jwt = false
+
+# #8: chamada pelo pg_cron com segredo próprio (CONFIRMACOES_CRON_SECRET), não por JWT.
+[functions.confirmacoes]
+verify_jwt = false
