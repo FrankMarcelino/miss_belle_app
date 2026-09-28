@@ -160,6 +160,26 @@ describe('lembrete de retoque', () => {
     expect(((data ?? []) as Acao[]).filter((x) => x.appointment_id === appt)).toHaveLength(0);
   });
 
+  // Revisão de segurança (28/09): qualquer usuária edita a automação, e um par
+  // malformado quebrava a função do retoque para TODAS as clínicas (e com ela a
+  // rodada inteira, confirmações incluídas). A trigger recusa na entrada.
+  it.each([
+    ['id que não é uuid', () => [{ gatilho: 'nao-e-uuid', retoque: manutencao }]],
+    ['par sem retoque', () => [{ gatilho: micro }]],
+    ['procedimento de outra clínica', async () => {
+      const outra = await createTenant(db, 'Outra');
+      const alheio = await createProcedure(db, outra, 60);
+      return [{ gatilho: alheio, retoque: manutencao }];
+    }],
+    ['mais de 20 pares', () => Array.from({ length: 21 }, () => ({ gatilho: micro, retoque: manutencao }))],
+  ])('par inválido (%s) é recusado ao salvar', async (_, pares) => {
+    const { error } = await db.from('automated_messages').insert({
+      tenant_id: tenantId, kind: 'retoque', enabled: true, attempts: 1, days_after: 40, interval_days: 15,
+      on_no_reply: 'nada', texts: ['a'], procedure_pairs: await pares(),
+    });
+    expect(error?.message).toMatch(/procedure_pairs/);
+  });
+
   it('retoque exige dias, pares e "sem resposta = nada"', async () => {
     const { error } = await db.from('automated_messages').insert({
       tenant_id: tenantId, kind: 'retoque', attempts: 1, texts: ['a'], on_no_reply: 'cancelar',

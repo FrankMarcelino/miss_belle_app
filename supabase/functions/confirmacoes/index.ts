@@ -69,7 +69,12 @@ serve(async (req) => {
       const restante = Math.max(limite - (conf.data ?? []).length, 0);
       if (restante === 0) return (conf.data ?? []) as Acao[];
       const ret = await admin.rpc('retoque_proximas_acoes', { p_limite: restante });
-      if (ret.error) throw new Error(`retoque_proximas_acoes: ${ret.error.message}`);
+      // Falha do retoque não derruba as confirmações (revisão de segurança,
+      // 28/09): a configuração de uma clínica não pode parar as das outras.
+      if (ret.error) {
+        console.error('confirmacoes: retoque falhou — segue só com as confirmações', ret.error.message);
+        return (conf.data ?? []) as Acao[];
+      }
       return [...(conf.data ?? []), ...(ret.data ?? [])] as Acao[];
     },
     registrar: async (id, acao, res, conversationId, erro) => {
