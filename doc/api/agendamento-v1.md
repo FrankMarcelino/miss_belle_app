@@ -2,7 +2,7 @@
 
 Contrato para o time do Agent Builder (LIVIA). Permite consultar profissionais,
 procedimentos e horários livres, e criar, consultar, cancelar e remarcar
-agendamentos.
+agendamentos, e confirmar o agendamento na véspera.
 
 > Versão do contrato: 2026-09-19. Mudanças em relação ao rascunho original estão
 > marcadas com **(novo)** ou **(alterado)**. A numeração dos endpoints 1–6 é a
@@ -291,6 +291,28 @@ atendimento na clínica errada.
 Recomendamos chamar isto uma vez ao configurar a integração e comparar com o
 tenant esperado do seu lado.
 
+## 9) `POST /appointments/{id}/confirm` **(novo)**
+
+A cliente respondeu à mensagem de confirmação da véspera e quer manter o
+horário. O agendamento `SCHEDULED` passa a `CONFIRMED`. Sem body.
+
+**`200`**
+
+```json
+{ "id": "77ac…", "status": "CONFIRMED", "confirmedAt": "2026-09-30T09:12:00-03:00" }
+```
+
+Confirmar um agendamento já `CONFIRMED` devolve `200` com o mesmo corpo — inclusive
+o que já nasceu confirmado (marcado com 30 h ou menos de antecedência).
+
+| Status | Código | Quando |
+|---|---|---|
+| 422 | `APPOINTMENT_NOT_ACTIVE` | cancelado ou concluído |
+| 422 | `APPOINTMENT_ALREADY_STARTED` | o horário já passou |
+| 404 | `APPOINTMENT_NOT_FOUND` | não existe nesta clínica |
+
+Se a cliente quiser outro horário, use o `PATCH` (6); se não puder ir, o `DELETE` (5).
+
 ## Políticas
 
 `minNoticeHours` (padrão 2) e `maxReschedules` (padrão 1) são configuradas **por
@@ -321,8 +343,9 @@ webhooks `APPOINTMENT_CREATED`, `APPOINTMENT_CANCELLED`, `APPOINTMENT_RESCHEDULE
 | `PROCEDURE_NOT_FOUND` | 404 | 3, 4 |
 | `PROCEDURE_NOT_OFFERED` | 422 | 3, 4 |
 | `PROCEDURE_NOT_BOOKABLE` | 422 | 3, 4 |
-| `APPOINTMENT_NOT_FOUND` | 404 | 5, 6 |
-| `APPOINTMENT_NOT_ACTIVE` | 422 | 5, 6 |
+| `APPOINTMENT_NOT_FOUND` | 404 | 5, 6, 9 |
+| `APPOINTMENT_NOT_ACTIVE` | 422 | 5, 6, 9 |
+| `APPOINTMENT_ALREADY_STARTED` | 422 | 9 |
 | `SLOT_NOT_AVAILABLE` | 422 | 4, 6 |
 | `SLOT_TAKEN_MEANTIME` | 409 | 4, 6 |
 | `IDEMPOTENCY_KEY_REUSED` | 422 | 4 |
