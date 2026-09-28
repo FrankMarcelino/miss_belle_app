@@ -283,6 +283,16 @@ describe('escritas', () => {
     expect(r.body).toMatchObject({ dateTime: `${TUE}T16:00:00-03:00`, rescheduleCount: 1 });
   });
 
+  it('POST /confirm confirma o agendado (#8)', async () => {
+    const created = await call('/appointments', novo());
+    expect(created.body.status).toBe('SCHEDULED');
+
+    const r = await call(`/appointments/${created.body.id}/confirm`, { method: 'POST', body: '{}' });
+
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ id: created.body.id, status: 'CONFIRMED' });
+  });
+
   it('agendamento de outra clínica → 404', async () => {
     const outra = await createTenant(db, 'Outra');
     const bia = await createProfessional(db, outra, { name: 'Bia' });

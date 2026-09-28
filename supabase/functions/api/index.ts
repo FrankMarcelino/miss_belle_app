@@ -208,6 +208,16 @@ async function rescheduleAppointment(tenantId: string, id: string, req: Request)
   return fromRpc(data);
 }
 
+async function confirmAppointment(tenantId: string, id: string): Promise<Response> {
+  const { data, error } = await admin.rpc('api_confirm_appointment', {
+    p_tenant_id: tenantId,
+    p_appointment_id: id,
+  });
+  if (error) return apiError(500, 'INTERNAL_ERROR', 'Não foi possível confirmar o agendamento.');
+
+  return fromRpc(data);
+}
+
 async function listAppointments(tenantId: string, url: URL): Promise<Response> {
   const phone = nonEmpty(url.searchParams.get('phone'), 'phone');
   const from = optionalIsoWithOffset(url.searchParams.get('from'), 'from') ?? new Date().toISOString();
@@ -302,6 +312,9 @@ serve(async (req) => {
       if (req.method === 'GET' && path.length === 1) return await listAppointments(tenantId, url);
       if (req.method === 'DELETE' && path.length === 2) return await cancelAppointment(tenantId, uuid(path[1], 'id'), req);
       if (req.method === 'PATCH' && path.length === 2) return await rescheduleAppointment(tenantId, uuid(path[1], 'id'), req);
+      if (req.method === 'POST' && path.length === 3 && path[2] === 'confirm') {
+        return await confirmAppointment(tenantId, uuid(path[1], 'id'));
+      }
     }
 
     return apiError(404, 'NOT_FOUND', 'Rota não encontrada.');
