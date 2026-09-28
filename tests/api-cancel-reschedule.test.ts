@@ -145,14 +145,15 @@ describe('remarcação', () => {
     const r = await reschedule(appt, `${TUE}T16:00:00-03:00`);
 
     expect(r.http).toBe(200);
-    expect(r.body).toMatchObject({ id: appt, status: 'CONFIRMED', dateTime: `${TUE}T16:00:00-03:00`, rescheduleCount: 1 });
+    // #7: horário novo a mais de 30 h → volta a SCHEDULED (a confirmação de 24 h ainda vai sair).
+    expect(r.body).toMatchObject({ id: appt, status: 'SCHEDULED', dateTime: `${TUE}T16:00:00-03:00`, rescheduleCount: 1 });
 
     const { data } = await db
       .from('appointments')
-      .select('appointment_time, rescheduled_from_time, reschedule_count')
+      .select('status, appointment_time, rescheduled_from_time, reschedule_count')
       .eq('id', appt)
       .single();
-    expect(data).toMatchObject({ appointment_time: '16:00:00', rescheduled_from_time: '14:00:00', reschedule_count: 1 });
+    expect(data).toMatchObject({ status: 'scheduled', appointment_time: '16:00:00', rescheduled_from_time: '14:00:00', reschedule_count: 1 });
   });
 
   it('o próprio agendamento não bloqueia o horário novo', async () => {

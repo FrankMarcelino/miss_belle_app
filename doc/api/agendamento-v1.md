@@ -26,8 +26,11 @@ agendamentos.
 ```
 
 - **Status de agendamento:** `SCHEDULED`, `CONFIRMED`, `COMPLETED`, `CANCELLED` **(novo)**.
-  Agendamentos criados pela API nascem `CONFIRMED`. Agendamentos marcados pela
-  profissional no app nascem `SCHEDULED`.
+  Agendamentos criados pela API nascem `SCHEDULED` quando faltam **mais de 30 h**
+  para o horário: 24 h antes sai a mensagem de confirmação, e só a resposta da
+  cliente os torna `CONFIRMED`. Com 30 h ou menos, nascem `CONFIRMED` (não haverá
+  a mensagem). Remarcar aplica a mesma regra ao horário novo (#7). Agendamentos
+  marcados pela profissional no app nascem `SCHEDULED`.
 
 ### Telefone **(novo)**
 
@@ -141,12 +144,12 @@ tem esses campos.
 - Cliente já cadastrada com o mesmo telefone é reutilizada — **o nome do
   cadastro prevalece** sobre o `client.name` enviado.
 
-**`201`**
+**`201`** (horário a mais de 30 h; com 30 h ou menos, `"status": "CONFIRMED"`)
 
 ```json
 {
   "id": "77ac…",
-  "status": "CONFIRMED",
+  "status": "SCHEDULED",
   "professionalId": "9f1c…",
   "procedureId": "3ab2…",
   "dateTime": "2026-09-20T14:30:00-03:00",
