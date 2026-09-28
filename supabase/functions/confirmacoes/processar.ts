@@ -12,7 +12,9 @@
 export type Acao = {
   confirmacao_id: string;
   appointment_id: string;
-  acao: 'primeiro' | 'segundo' | 'cancelar' | 'aviso_cancelamento';
+  acao: 'primeiro' | 'lembrete' | 'cancelar' | 'aviso_cancelamento';
+  // Número da tentativa (1 = primeiro aviso). Nulo em cancelar/aviso (#12).
+  tentativa?: number | null;
   conversation_id: string | null;
   primeiro_envio_em: string | null;
   cliente_nome: string | null;
@@ -122,7 +124,8 @@ export async function processarConfirmacoes(d: Dependencias): Promise<{ processa
         case 'aviso_cancelamento':
           await enviar(a);
           break;
-        case 'segundo':
+        // Tentativa 2 em diante (#12: quantas e com que intervalo vem da configuração).
+        case 'lembrete':
           if (await seguirSemResposta(a)) await enviar(a);
           break;
         case 'cancelar':

@@ -3,7 +3,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { processarConfirmacoes, type Acao } from './processar.ts';
 
 /**
- * Confirmação automática 24 h antes (#8) — chamada pelo pg_cron a cada 15 min.
+ * Mensagens automáticas (#8, #12): confirmação da véspera e lembrete de retoque —
+ * chamada pelo pg_cron a cada 15 min.
  *
  * Fina de propósito: a regra de QUANDO vive no banco (confirmacao_proximas_acoes)
  * e a de O QUE FAZER com cada resposta vive em processar.ts, testado no vitest.
@@ -59,10 +60,22 @@ serve(async (req) => {
   };
 
   const resultado = await processarConfirmacoes({
+    // Confirmação da véspera e lembrete de retoque (#12) no mesmo lote: são o
+    // mesmo ciclo (tentativa → pergunta se respondeu → próxima), com gatilhos
+    // diferentes. A confirmação vem primeiro — ela tem hora marcada para acabar.
     proximas: async (limite) => {
-      const { data, error } = await admin.rpc('confirmacao_proximas_acoes', { p_limite: limite });
-      if (error) throw new Error(`confirmacao_proximas_acoes: ${error.message}`);
-      return (data ?? []) as Acao[];
+      const conf = await admin.rpc('confirmacao_proximas_acoes', { p_limite: limite });
+      if (conf.error) throw new Error(`confirmacao_proximas_acoes: ${conf.error.message}`);
+      const restante = Math.max(limite - (conf.data ?? []).length, 0);
+      if (restante === 0) return (conf.data ?? []) as Acao[];
+      const ret = await admin.rpc('retoque_proximas_acoes', { p_limite: restante });
+      // Falha do retoque não derruba as confirmações (revisão de segurança,
+      // 28/09): a configuração de uma clínica não pode parar as das outras.
+      if (ret.error) {
+        console.error('confirmacoes: retoque falhou — segue só com as confirmações', ret.error.message);
+        return (conf.data ?? []) as Acao[];
+      }
+      return [...(conf.data ?? []), ...(ret.data ?? [])] as Acao[];
     },
     registrar: async (id, acao, res, conversationId, erro) => {
       const { error } = await admin.rpc('confirmacao_registrar', {

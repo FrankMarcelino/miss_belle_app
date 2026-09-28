@@ -19,6 +19,7 @@ import {
   CreditCard,
   AlertCircle,
   Clock,
+  MessageCircle,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -44,6 +45,7 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Agenda Geral', icon: Calendar, path: '/agenda-geral' },
         { label: 'Expediente', icon: Clock, path: '/expediente' },
+        { label: 'Mensagens automáticas', icon: MessageCircle, path: '/mensagens-automaticas' },
         { label: 'Usuários', icon: Users, path: '/usuarios', superAdminOnly: true },
         { label: 'Procedimentos', icon: Scissors, path: '/procedimentos' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
@@ -53,6 +55,7 @@ export default function Layout({ children }: LayoutProps) {
         { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
         { label: 'Minha Agenda', icon: Calendar, path: '/minha-agenda' },
         { label: 'Expediente', icon: Clock, path: '/expediente' },
+        { label: 'Mensagens automáticas', icon: MessageCircle, path: '/mensagens-automaticas' },
         { label: 'Clientes', icon: UserCircle, path: '/pacientes' },
         { label: 'Meus Serviços', icon: Scissors, path: '/procedimentos' },
         { label: 'Financeiro', icon: Wallet, path: '/financeiro' },

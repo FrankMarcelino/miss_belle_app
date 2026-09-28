@@ -21,7 +21,8 @@ const TER = '2030-01-08';
 type Acao = {
   confirmacao_id: string;
   appointment_id: string;
-  acao: 'primeiro' | 'segundo' | 'cancelar' | 'aviso_cancelamento';
+  acao: 'primeiro' | 'lembrete' | 'cancelar' | 'aviso_cancelamento';
+  tentativa: number | null;
   conversation_id: string | null;
   primeiro_envio_em: string | null;
   cliente_nome: string;
@@ -62,6 +63,9 @@ beforeEach(async () => {
     livia_channel_id: 'a87ac6e0-fec7-4b6f-8c12-2f736324178c',
   });
   if (error) throw new Error(error.message);
+  // #12: a automação da clínica, com os padrões (09:00, 2 tentativas, 4 h, cancelar).
+  const { error: eAuto } = await db.from('automated_messages').insert({ tenant_id: tenantId, kind: 'confirmacao', enabled: true });
+  if (eAuto) throw new Error(eAuto.message);
 });
 
 // Limite alto: o banco local acumula clínicas de outros testes, e um limite
@@ -149,7 +153,7 @@ describe('relógio 4 h + 4 h', () => {
 
     expect(doTenant(await proximas('2030-01-07 13:29:00'), appt)).toHaveLength(0);
     const [s] = doTenant(await proximas('2030-01-07 13:30:00'), appt);
-    expect(s).toMatchObject({ acao: 'segundo', conversation_id: '0f0e0d0c-0000-4000-8000-0000000000c1' });
+    expect(s).toMatchObject({ acao: 'lembrete', tentativa: 2, conversation_id: '0f0e0d0c-0000-4000-8000-0000000000c1' });
     expect(s.primeiro_envio_em).toMatch(/2030-01-07T12:30:00/); // 09:30 de Brasília em UTC
     expect(s.texto).toContain('o horário é liberado hoje às 17:30');
   });
@@ -158,7 +162,7 @@ describe('relógio 4 h + 4 h', () => {
     const appt = await agendado();
     const [a] = doTenant(await proximas(SEG_0930), appt);
     await registrar(a.confirmacao_id, 'primeiro', 'enviado', SEG_0930, '0f0e0d0c-0000-4000-8000-0000000000c1');
-    await registrar(a.confirmacao_id, 'segundo', 'enviado', '2030-01-07 13:30:00');
+    await registrar(a.confirmacao_id, 'lembrete', 'enviado', '2030-01-07 13:30:00');
 
     expect(doTenant(await proximas('2030-01-07 17:29:00'), appt)).toHaveLength(0);
     const [c] = doTenant(await proximas('2030-01-07 17:30:00'), appt);
@@ -180,7 +184,7 @@ describe('relógio 4 h + 4 h', () => {
     const appt = await agendado();
     const [a] = doTenant(await proximas(SEG_0930), appt);
     await registrar(a.confirmacao_id, 'primeiro', 'enviado', SEG_0930);
-    await registrar(a.confirmacao_id, 'segundo', 'respondeu', '2030-01-07 13:30:00');
+    await registrar(a.confirmacao_id, 'lembrete', 'respondeu', '2030-01-07 13:30:00');
     expect(doTenant(await proximas('2030-01-07 13:31:00'), appt)).toHaveLength(0);
     expect(doTenant(await proximas('2030-01-07 20:00:00'), appt)).toHaveLength(0);
   });
@@ -197,7 +201,7 @@ describe('relógio 4 h + 4 h', () => {
     const appt = await agendado('15:00');
     const [a] = doTenant(await proximas(SEG_0930), appt);
     await registrar(a.confirmacao_id, 'primeiro', 'enviado', SEG_0930);
-    await registrar(a.confirmacao_id, 'segundo', 'enviado', '2030-01-07 13:30:00');
+    await registrar(a.confirmacao_id, 'lembrete', 'enviado', '2030-01-07 13:30:00');
     await db.from('appointments').update({ appointment_time: '16:00' }).eq('id', appt);
 
     const acoes = doTenant(await proximas('2030-01-07 17:30:00'), appt);
@@ -210,7 +214,7 @@ describe('cancelamento', () => {
     const appt = await agendado();
     const [a] = doTenant(await proximas(SEG_0930), appt);
     await registrar(a.confirmacao_id, 'primeiro', 'enviado', SEG_0930);
-    await registrar(a.confirmacao_id, 'segundo', 'enviado', '2030-01-07 13:30:00');
+    await registrar(a.confirmacao_id, 'lembrete', 'enviado', '2030-01-07 13:30:00');
     await db.from('appointments').update({ has_payment: true }).eq('id', appt);
 
     const [c] = doTenant(await proximas('2030-01-07 17:30:00'), appt);
@@ -224,7 +228,7 @@ describe('cancelamento', () => {
     const appt = await agendado();
     const [a] = doTenant(await proximas(SEG_0930), appt);
     await registrar(a.confirmacao_id, 'primeiro', 'enviado', SEG_0930);
-    await registrar(a.confirmacao_id, 'segundo', 'enviado', '2030-01-07 13:30:00');
+    await registrar(a.confirmacao_id, 'lembrete', 'enviado', '2030-01-07 13:30:00');
     const [c] = doTenant(await proximas('2030-01-07 17:30:00'), appt);
     await db.from('appointments').update({ status: 'confirmed' }).eq('id', appt);
 

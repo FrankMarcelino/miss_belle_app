@@ -12,6 +12,7 @@ import Expenses from './pages/Expenses';
 import Financeiro from './pages/Financeiro';
 import Plano from './pages/Plano';
 import Expediente from './pages/Expediente';
+import MensagensAutomaticas from './pages/MensagensAutomaticas';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import OnboardingWizard from './components/OnboardingWizard';
@@ -96,6 +97,8 @@ function App() {
         return <Procedures />;
       case '/expediente':
         return <Expediente />;
+      case '/mensagens-automaticas':
+        return <MensagensAutomaticas />;
       case '/pacientes':
         return <Patients />;
       case '/minha-agenda':
