@@ -90,14 +90,16 @@ export default function Layout({ children }: LayoutProps) {
                 <button
                   key={item.path}
                   onClick={() => { navigate(item.path); setSidebarOpen(false); }}
-                  className={`w-full flex items-center gap-3 px-4 py-3 text-text hover:bg-champagne-nuvem rounded-lg transition-colors group ${
+                  // Rótulo longo ("Mensagens automáticas") quebra em duas linhas: alinhado
+                  // à esquerda e com o ícone na 1ª linha, continua na coluna dos outros.
+                  className={`w-full flex items-start gap-3 px-4 py-3 text-left text-text hover:bg-champagne-nuvem rounded-lg transition-colors group ${
                     currentRoute === item.path ? 'bg-champagne-nuvem' : ''
                   }`}
                 >
-                  <Icon className={`w-5 h-5 transition-colors ${
+                  <Icon className={`w-5 h-5 mt-0.5 shrink-0 transition-colors ${
                     currentRoute === item.path ? 'text-primary' : 'text-text-muted group-hover:text-primary'
                   }`} />
-                  <span className="font-medium">{item.label}</span>
+                  <span className="font-medium leading-snug">{item.label}</span>
                 </button>
               );
             })}
