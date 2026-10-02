@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { localEnv, serviceClient } from './helpers/db';
@@ -80,6 +80,93 @@ describe('autenticação', () => {
 
     const r = await call('/professionals', { apiKey: await issueKey(outra, 'AB outra') });
     expect(r.body.data.map((p: any) => p.name)).toEqual(['Bia']);
+  });
+});
+
+describe('chave de plataforma (X-Livia-Tenant-Id)', () => {
+  let platformKey: string;
+  let livia: string;
+
+  beforeEach(async () => {
+    livia = randomUUID();
+    await db.from('tenants').update({ livia_tenant_id: livia }).eq('id', tenantId);
+    const { data, error } = await db.rpc('api_issue_platform_key', { p_name: 'AB plataforma' });
+    if (error) throw new Error(error.message);
+    platformKey = data as string;
+  });
+
+  const asPlatform = (path: string, liviaTenant: string | null, init: RequestInit = {}) =>
+    call(path, {
+      ...init,
+      apiKey: platformKey,
+      headers: liviaTenant ? { 'X-Livia-Tenant-Id': liviaTenant } : {},
+    });
+
+  it('o cabeçalho escolhe a clínica; a mesma chave não vaza a agenda da outra', async () => {
+    const outra = await createTenant(db, 'Outra Clínica');
+    const outraLivia = randomUUID();
+    await db.from('tenants').update({ livia_tenant_id: outraLivia }).eq('id', outra);
+    const bia = await createProfessional(db, outra, { name: 'Bia' });
+    await db.from('profiles').update({ bot_enabled: true }).eq('id', bia.id);
+
+    const daqui = await asPlatform('/professionals', livia);
+    const dali = await asPlatform('/professionals', outraLivia);
+
+    expect(daqui.status).toBe(200);
+    expect(daqui.body.data.map((p: any) => p.name)).toEqual(['Ana Souza']);
+    expect(dali.body.data.map((p: any) => p.name)).toEqual(['Bia']);
+  });
+
+  it('escreve na clínica do cabeçalho', async () => {
+    const r = await asPlatform('/appointments', livia, {
+      method: 'POST',
+      body: JSON.stringify({
+        professionalId: ana.id,
+        procedureId: proc,
+        dateTime: `${TUE}T10:00:00-03:00`,
+        client: { name: 'Cliente Plataforma', phone: '+5511999990001' },
+      }),
+    });
+    expect(r.status).toBe(201);
+
+    const { data } = await db.from('appointments').select('tenant_id').eq('id', r.body.id).single();
+    expect(data?.tenant_id).toBe(tenantId);
+  });
+
+  it('sem o cabeçalho → 422, nunca uma clínica padrão', async () => {
+    const r = await asPlatform('/professionals', null);
+    expect(r.status).toBe(422);
+    expect(r.body.error.code).toBe('VALIDATION_ERROR');
+    expect(r.body.error.details).toEqual({ field: 'X-Livia-Tenant-Id' });
+  });
+
+  it('cabeçalho que não é uuid → 422', async () => {
+    const r = await asPlatform('/professionals', 'miss-belle');
+    expect(r.status).toBe(422);
+    expect(r.body.error.details).toEqual({ field: 'X-Livia-Tenant-Id' });
+  });
+
+  it('tenant da LIVIA sem clínica vinculada → 403 TENANT_NOT_LINKED', async () => {
+    const r = await asPlatform('/professionals', randomUUID());
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe('TENANT_NOT_LINKED');
+  });
+
+  it('chave de clínica com cabeçalho de outra clínica → 403 TENANT_MISMATCH', async () => {
+    const r = await call('/professionals', { headers: { 'X-Livia-Tenant-Id': randomUUID() } });
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe('TENANT_MISMATCH');
+  });
+
+  it('chave de clínica com o cabeçalho da própria clínica → 200', async () => {
+    const r = await call('/professionals', { headers: { 'X-Livia-Tenant-Id': livia } });
+    expect(r.status).toBe(200);
+  });
+
+  it('GET /clinic responde a clínica resolvida', async () => {
+    const r = await asPlatform('/clinic', livia);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ id: tenantId, liviaTenantId: livia });
   });
 });
 

@@ -10,7 +10,8 @@
 | # | Decisão | Alternativa recusada |
 |---|---|---|
 | A-1 | **Edge Function `api`** no Supabase, `verify_jwt = false`, roteador `/v1/...` | Vercel Functions (service_role fora do Supabase; deploy acoplado ao front) |
-| A-2 | Autenticação por **chave por integração** (`api_keys`, só o hash) | usuário-robô (vira super_admin); chave global (acessa qualquer clínica) |
+| A-2 | Autenticação por **chave por integração** (`api_keys`, só o hash). **Revista em 02/10/2026:** ganhou a **chave de plataforma** + `X-Livia-Tenant-Id` (ver A-2b) | usuário-robô (vira super_admin); chave global (acessa qualquer clínica) |
+| A-2b | **Chave de plataforma** (`scope='platform'`): uma credencial para o integrador, a clínica sai do tenant da LIVIA no cabeçalho, pelo vínculo `tenants.livia_tenant_id`; sem vínculo, recusa (sem clínica padrão). Motivo: o AB guarda **uma** chave de agenda para a plataforma, e chave por tenant no AB não escala (Frank); o tenant da LIVIA é o id que sobrevive à fase 2 da docs#22. Custo aceito: vazar essa chave alcança todas as clínicas vinculadas | chave por tenant no AB (não escala); manter só a de clínica (todo agente do AB cairia na Miss Belle — LIVIA-AVOCADO/app#1237) |
 | A-3 | **Função fina, regra no banco:** um RPC por operação de escrita, numa transação | orquestrar várias chamadas pela função |
 | A-4 | `409` só com **`availabilityCheckedAt`** enviado pelo AB | janela de tempo; separar por natureza do erro |
 | A-5 | `minNoticeHours` / `maxReschedules` **por profissional**, em `profiles` | por clínica; tabela `professional_settings` (mover `slot_step_minutes` recém-lançado não compensa) |
