@@ -12,8 +12,16 @@ agendamentos, e confirmar o agendamento na véspera.
 
 - **Base URL:** `https://otzaauwiziyoxlvttgsb.supabase.co/functions/v1/api/v1` **(alterado)** — o domínio
   `api.missbele.com` ainda não existe; quando existir, só a base URL muda.
-- **Auth:** `Authorization: Bearer {chave}`. A chave pertence a **uma** clínica e
-  só enxerga os dados dela. Chave ausente, inválida ou revogada → `401`.
+- **Auth:** `Authorization: Bearer {chave}`. Chave ausente, inválida ou revogada → `401`.
+  Há dois tipos de chave:
+  - **de clínica** (`mb_…`): pertence a **uma** clínica e só enxerga os dados dela.
+  - **de plataforma** (`mbp_…`) **(novo)**: uma para o integrador. Exige o cabeçalho
+    **`X-Livia-Tenant-Id: {uuid do tenant na LIVIA}`** em toda chamada, e a clínica é a vinculada a
+    esse tenant. Não existe clínica padrão:
+    - sem o cabeçalho, ou fora do formato uuid → `422 VALIDATION_ERROR` (`details.field = "X-Livia-Tenant-Id"`);
+    - tenant sem clínica ativa vinculada → `403 TENANT_NOT_LINKED`.
+  - A chave de clínica aceita o cabeçalho para conferência: se ele apontar para outra
+    clínica → `403 TENANT_MISMATCH`.
 - **Content-Type:** `application/json`.
 - **IDs:** string (UUID).
 - **Datas/horas:** ISO 8601 **com offset obrigatório** (ex.: `2026-09-20T14:30:00-03:00`).
@@ -282,8 +290,9 @@ atendimento na clínica errada.
 }
 ```
 
-- `liviaTenantId`: o tenant da LIVIA que esta chave atende. Vem `null` quando a
-  chave não está vinculada (é o caso do sandbox).
+- `liviaTenantId`: o tenant da LIVIA vinculado a esta clínica. Vem `null` quando a
+  clínica não está vinculada (é o caso do sandbox). Com a chave de plataforma, a
+  resposta é a clínica resolvida pelo `X-Livia-Tenant-Id`.
 - `timezone`: fixo em `America/Sao_Paulo` — é o fuso dos horários que toda a API
   devolve, publicado aqui para não precisar ser adivinhado.
 - A chave **nunca** aparece na resposta, nem em hash.
@@ -324,7 +333,8 @@ profissional continua livre no app.
 - **Sandbox:** uma clínica de teste, com profissionais e procedimentos
   fictícios e **chave própria**. Mesma URL de produção; a chave de sandbox só
   enxerga a clínica de teste.
-- **Produção:** chave emitida por clínica, entregue por canal seguro.
+- **Produção:** chave emitida por clínica, entregue por canal seguro; ou a **chave de
+  plataforma** do integrador, com a clínica vinculada ao tenant da LIVIA.
 
 ## Fora de escopo
 
@@ -336,6 +346,8 @@ webhooks `APPOINTMENT_CREATED`, `APPOINTMENT_CANCELLED`, `APPOINTMENT_RESCHEDULE
 | Código | HTTP | Endpoints |
 |---|---|---|
 | `UNAUTHORIZED` | 401 | todos |
+| `TENANT_NOT_LINKED` | 403 | todos (chave de plataforma) |
+| `TENANT_MISMATCH` | 403 | todos (chave de clínica + cabeçalho de outra) |
 | `INTERNAL_ERROR` | 500 | todos |
 | `VALIDATION_ERROR` | 422 | todos com parâmetros |
 | `MAX_RANGE_EXCEEDED` | 400 | availability |

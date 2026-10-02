@@ -114,4 +114,13 @@ describe('quem enxerga a tabela', () => {
     const issue = await asAna.rpc('api_issue_key', { p_tenant_id: tenantId, p_name: 'x' });
     expect(issue.error?.message).toMatch(/permission denied/i);
   });
+
+  // A chave de plataforma alcança TODAS as clínicas vinculadas: emitir é só
+  // pela service role (SQL Editor), nunca por uma sessão do app.
+  it('profissional logada não emite chave de plataforma', async () => {
+    const asAna = await userClient(ana.email, ana.password);
+
+    const issue = await asAna.rpc('api_issue_platform_key', { p_name: 'x' });
+    expect(issue.error?.message).toMatch(/permission denied/i);
+  });
 });

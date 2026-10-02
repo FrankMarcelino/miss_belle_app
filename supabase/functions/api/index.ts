@@ -1,6 +1,6 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { authenticate } from './auth.ts';
+import { authenticate, LIVIA_TENANT_HEADER, type AuthRefusal } from './auth.ts';
 import { apiError, fromRpc, json, STATUS_FROM_API, STATUS_TO_API, stampToIso, toIso } from './format.ts';
 import { dateOnly, days as parseDays, isoWithOffset, nonEmpty, optionalIsoWithOffset, uuid, ValidationError } from './validate.ts';
 
@@ -274,16 +274,36 @@ async function listAppointments(tenantId: string, url: URL): Promise<Response> {
   return json({ data: rows });
 }
 
+/**
+ * A chave existe, mas não leva a uma clínica. Cabeçalho ausente ou malformado é
+ * erro de entrada (422, como os demais); vínculo inexistente ou trocado é 403 —
+ * a chave é boa, o tenant pedido é que não pode ser atendido por ela.
+ */
+function refusalResponse(refusal: AuthRefusal): Response {
+  switch (refusal) {
+    case 'INVALID_TENANT_HEADER':
+      return apiError(422, 'VALIDATION_ERROR', `${LIVIA_TENANT_HEADER} precisa ser um uuid.`, { field: LIVIA_TENANT_HEADER });
+    case 'TENANT_REQUIRED':
+      return apiError(422, 'VALIDATION_ERROR', `Chave de plataforma exige o cabeçalho ${LIVIA_TENANT_HEADER}.`, { field: LIVIA_TENANT_HEADER });
+    case 'TENANT_NOT_LINKED':
+      return apiError(403, 'TENANT_NOT_LINKED', 'Nenhuma clínica ativa vinculada a este tenant da LIVIA.');
+    case 'TENANT_MISMATCH':
+      return apiError(403, 'TENANT_MISMATCH', `A chave pertence a outra clínica que não a do ${LIVIA_TENANT_HEADER}.`);
+  }
+}
+
 serve(async (req) => {
   const url = new URL(req.url);
   // /functions/v1/api/v1/<recurso> → [<recurso>, ...]
   const path = url.pathname.replace(/^.*?\/api\/v1\/?/, '').split('/').filter(Boolean);
 
   try {
-    const caller = await authenticate(req, admin);
-    if (!caller) {
+    const auth = await authenticate(req, admin);
+    if (!auth) {
       return apiError(401, 'UNAUTHORIZED', 'Chave de API ausente ou inválida.');
     }
+    if ('refusal' in auth) return refusalResponse(auth.refusal);
+    const caller = auth.caller;
     const tenantId = caller.tenantId;
 
     // De quem é esta chave? Os dois lados guardam um ponteiro para o outro, e
